@@ -131,6 +131,28 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
 - `POST /radar/feedback` `{"track_id", "feedback", "genero"}` - `feedback` é
   `"positivo"` ou `"negativo"`; `genero` vem de quem está mandando (a GAIA reenvia o
   que recebeu junto com a faixa no Radar).
+- `POST /radar/proxima` `{"artista_atual", "titulo_atual", "excluir"}` -
+  continuação ao vivo (ver seção abaixo). `excluir`: lista de "artista::titulo"
+  já tocados na sessão atual.
+
+## Continuação ao vivo (Modo Música do ERIS, 2026-08-25)
+
+Pedido do usuário: "quero q alguem seja meu dj exclusivo... qnd eu pedir uma
+musica, ele continue tocando outras em sequencia na mesma vibe". Diferente
+do Radar semanal (lote fechado de 10 músicas), `echo/core/continuacao.py`
+devolve UMA sugestão por vez, semeada pela faixa que está tocando AGORA
+numa call de verdade (quem toca é o [Project ERIS](../../Project-ERIS) -
+o ECHO nunca sabe o que é YouTube/Discord, só devolve `{"artista",
+"titulo"}`).
+
+Trata o artista/gêneros da faixa atual como preferência FORTE só pra essa
+sugestão (perfil efetivo, cópia em memória, nunca persistida) - mesmo que o
+artista ainda não esteja cadastrado como favorito no perfil de longo prazo,
+já que "a mesma vibe" precisa reagir ao pedido imediato do usuário, não só
+ao histórico salvo. Dedup de sessão (`excluir`) é responsabilidade de quem
+chama (o ERIS mantém a lista do que já tocou nesta call) - o `core.
+recomendador.ranquear` ainda aplica o dedup de 90 dias do Radar semanal por
+baixo, como segunda camada.
 
 ## Persistência (`data/`, gitignored)
 
@@ -141,12 +163,17 @@ HESTIA/MOIRAI depois do bug real de cache stale documentado lá
 
 ## O que fica pendente pra Fase 2/3 (ver `TODO.md`)
 
-Histórico real de reprodução, peso comportamental (username do Last.fm
-vinculado), Playlist Descobertas automática (precisa de um provedor com
-streaming - Last.fm não faz), Em Alta dedicado, Redescobertas dedicadas, nível
-de descoberta configurável de verdade (hoje só persiste o valor, não influencia
-o ranking ainda), recomendações contextuais, playback/playlist de verdade
-(exige um segundo provedor com OAuth de usuário, ex.: Spotify).
+Peso comportamental contínuo (hoje o histórico do Last.fm só vira seed
+inicial do perfil, não ajusta com o tempo), Playlist Descobertas automática
+(o playback de música em si já existe via ERIS/YouTube fora da abstração de
+provedor do ECHO - mas SALVAR uma playlist gerenciada continua exigindo um
+provedor com biblioteca/playlist de usuário, ex.: Spotify com OAuth), Em
+Alta dedicado, Redescobertas dedicadas, nível de descoberta configurável de
+verdade (hoje só persiste o valor, não influencia o ranking ainda),
+recomendações contextuais. `criar_playlist`/`adicionar_faixa_playlist`/
+`tocar_faixa` na abstração `ProvedorMusical` continuam sem implementação -
+o playback de verdade achou outro caminho (ERIS busca no YouTube direto,
+nunca precisou dessa interface).
 
 ## Integração com a GAIA (feita no repo dela)
 

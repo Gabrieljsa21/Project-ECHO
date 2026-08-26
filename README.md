@@ -4,11 +4,14 @@
 
 # Project ECHO
 
-Modo DJ da GAIA - perfil musical persistente, ranking determinístico e Radar Musical
-semanal. Processo próprio, **sem interface gráfica** - só uma ponte HTTP; quem decide
-QUANDO gerar o Radar (Agendador Diário ou comando do usuário) e COMO apresentar
-(persona, explicação da recomendação) é sempre a [GAIA](../Project%20G.A.I.A)
-(assistente pessoal do mesmo autor), consultando o ECHO por HTTP.
+Modo DJ da GAIA - perfil musical persistente, ranking determinístico, Radar Musical
+semanal e continuação ao vivo pra quem toca música de verdade numa call
+([Project ERIS](../../Project-ERIS)). Processo próprio, **sem interface gráfica** -
+só uma ponte HTTP; quem decide QUANDO gerar o Radar (Agendador Diário ou comando do
+usuário) e COMO apresentar (persona, explicação da recomendação) é sempre a
+[GAIA](../Project%20G.A.I.A) (assistente pessoal do mesmo autor), consultando o
+ECHO por HTTP. O ECHO nunca toca áudio nem sabe o que é YouTube/Discord - só
+metadado/ranking.
 
 Baseado na especificação completa em `Project G.A.I.A/Project ECHO.md` (32 seções -
 objetivo, perfil musical, motor de recomendação, Radar Musical, feedback,
@@ -37,10 +40,13 @@ deliberadamente evita (seção 6.4 - Exploração).
 - [x] Histórico de recomendações + dedup (redescoberta só após 90 dias)
 - [x] 👍 / 👎 (ajusta peso de gênero incrementalmente, nunca substitui o perfil)
 - [x] Evitar duplicatas / máx. 1 faixa por artista por edição
+- [x] Continuação ao vivo (`POST /radar/proxima`) - uma sugestão por vez,
+      semeada pela faixa que está tocando agora numa call real (Modo Música
+      do ERIS), com dedup de sessão
 
-Fase 2 (histórico real de reprodução, peso comportamental, playlist automática, Em
-Alta, Redescobertas, nível de descoberta configurável) e Fase 3 (playlists
-contextuais, múltiplos provedores) ficam para depois - ver `TODO.md`.
+Fase 2 (peso comportamental contínuo, Em Alta, Redescobertas, nível de
+descoberta configurável) e Fase 3 (playlists gerenciadas, múltiplos
+provedores) ficam para depois - ver `TODO.md`.
 
 ## Uso standalone
 
