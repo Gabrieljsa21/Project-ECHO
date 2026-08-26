@@ -78,3 +78,13 @@ popularidade, todos passando.
   totalmente vazio. 4 testes novos (36 no total), todos passando; validado
   ao vivo contra o Last.fm real com o perfil do usuário (sugeriu Radiohead,
   depois Maroon 5 ao excluir a primeira).
+- **Feedback ao vivo - `POST /radar/feedback_ao_vivo`** (2026-08-26, pedido
+  do usuário: "quando ela toca uma musica, podia aparecer botoes de like,
+  dislike e next") - `echo/core/feedback.py::processar_feedback_ao_vivo`,
+  mesmo ajuste incremental de gênero do feedback do Radar (+0.08/-0.12,
+  nunca substitui o perfil), mas cria a entrada no histórico na hora se a
+  faixa nunca passou pelo Radar (busca livre do usuário no Modo Música) e
+  resolve o gênero sozinho - o ERIS só manda artista/título. 6 testes
+  novos (42 no total), todos passando; validado ao vivo contra o Last.fm
+  real (like e dislike na mesma faixa, segunda chamada atualiza a mesma
+  entrada em vez de duplicar).

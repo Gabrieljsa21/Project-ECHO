@@ -128,6 +128,18 @@ class _API(BaseHTTPRequestHandler):
                 self._responder_json({"proxima": proxima})
             except ProvedorIndisponivel as e:
                 self._responder_json({"erro": str(e), "proxima": None}, status=503)
+        elif caminho == "/radar/feedback_ao_vivo":
+            # 🔥 Botões 👍/👎 do Modo Música (ERIS, 2026-08-26) - a faixa tocada ao
+            # vivo pode nunca ter passado pelo Radar; cria a entrada no histórico
+            # na hora e resolve o gênero sozinho (o ERIS só manda artista/título).
+            try:
+                provedor = obter_provedor()
+                entrada = feedback_mod.processar_feedback_ao_vivo(
+                    provedor, corpo.get("titulo", ""), corpo.get("artista", ""), corpo.get("feedback", ""),
+                )
+                self._responder_json({"entrada": entrada})
+            except ProvedorIndisponivel as e:
+                self._responder_json({"erro": str(e), "entrada": None}, status=503)
         elif caminho == "/radar/semente":
             # 🔥 Ponto de partida do `/caos` (ERIS, 2026-08-26) - sugestão SEM
             # faixa atual pra semear (diferente de `/radar/proxima`), mesma
