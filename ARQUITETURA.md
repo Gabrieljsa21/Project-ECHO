@@ -11,8 +11,8 @@ QUANDO chamar). Baseado na especificação completa em
 Mesmo raciocínio do HESTIA/MOIRAI: o ranking musical é puramente determinístico
 (seção 19 do ECHO_SPEC - "não depender exclusivamente do LLM pra escolher música"),
 não depende de decisão em tempo real da persona, e tem uma superfície de API externa
-própria (Spotify) que não precisa de credencial/lógica misturada ao processo
-principal. O que FICA do lado da GAIA é justamente o que precisa da persona:
+própria (provedor musical) que não precisa de credencial/lógica misturada ao
+processo principal. O que FICA do lado da GAIA é justamente o que precisa da persona:
 explicabilidade em linguagem natural (seção 13), apresentação do Radar (seção 7.4),
 interpretação de feedback em linguagem natural, e o Agendador Diário decidindo a
 cadência semanal.
@@ -39,20 +39,47 @@ cadência semanal.
 
 ## Provedor musical (`echo/providers/`)
 
-Abstração (`ProvedorMusical`) desacoplada do Spotify de propósito (seção 17/princípio
-7 da seção 31 - "o núcleo do Modo DJ deve sobreviver à troca da integração
-musical"). Métodos: `buscar_faixa`, `obter_lancamentos_novos`,
-`obter_faixas_em_alta`, `obter_reproduzidas_recentemente`,
+Abstração (`ProvedorMusical`) desacoplada de propósito (seção 17/princípio 7 da
+seção 31 - "o núcleo do Modo DJ deve sobreviver à troca da integração musical").
+Métodos: `buscar_faixa`, `obter_faixas_do_artista`, `obter_faixas_por_tag`,
+`obter_lancamentos_novos`, `obter_faixas_em_alta`, `obter_reproduzidas_recentemente`,
 `obter_top_faixas_usuario`, `obter_top_artistas_usuario`, `criar_playlist`,
 `adicionar_faixa_playlist`, `tocar_faixa`.
 
-`ProvedorSpotify` (`providers/spotify.py`) implementa só o que a Fase 1 precisa via
-fluxo **Client Credentials** (sem login de usuário, só dado público): busca de
-faixas e lançamentos, com gênero resolvido por artista (a Spotify só expõe gênero
-nesse nível, nunca em álbum/faixa). Os métodos que exigem autorização de USUÁRIO
-(histórico real de reprodução, top faixas/artistas, playlists) levantam
-`ProvedorIndisponivel` com mensagem clara - pertencem à Fase 2/3 (OAuth Authorization
-Code, fora do escopo desta extração).
+### Por que Last.fm (não Spotify) - decisão de 2026-08-25
+
+A implementação de referência original usou o Spotify (Client Credentials, sem
+login), mas uma mudança de política da própria Spotify em fevereiro/março de 2026
+(1) passou a exigir **assinatura Premium ATIVA** só pra manter o app de
+desenvolvedor funcionando (se o Premium expirar, o app para) e (2) **removeu o
+endpoint de "novos lançamentos"** (`GET /browse/new-releases`) sem substituto
+oficial, junto com a busca em lote de artistas. Isso quebrava justamente a
+"busca de lançamentos" da Fase 1, e criava um vínculo de pagamento recorrente
+indesejado pra um projeto pessoal.
+
+`ProvedorLastfm` (`providers/lastfm.py`) substituiu o Spotify: API gratuita, sem
+assinatura, sem login de usuário, chave gerada em 2 minutos. Como a Fase 1 nunca
+toca música de verdade (isso só entra na Fase 3, com login de usuário num
+serviço de streaming), o Last.fm - que é puramente um serviço de
+metadado/scrobbling - encaixa melhor que o Spotify já encaixava:
+- `chart.gettoptracks` (chart global) alimenta `obter_lancamentos_novos` -
+  aproximação honesta de "relevância atual" (Last.fm não tem conceito de data de
+  lançamento, só de popularidade de reprodução).
+- `artist.gettoptracks` alimenta `obter_faixas_do_artista` - substitui o hack
+  `buscar_faixa('artist:"X"')` que a versão Spotify precisava, com um endpoint
+  dedicado de verdade.
+- `tag.gettoptracks` alimenta `obter_faixas_por_tag` (NOVO, não existia na
+  versão Spotify) - candidato dedicado por gênero preferido, alimentando
+  descoberta/exploração melhor do que só sobras do chart global.
+- Popularidade normalizada em escala LOGARÍTMICA de `listeners` (contagem bruta,
+  sem teto) pra 0-100, já que o Last.fm não tem um score de popularidade oficial
+  como o Spotify tinha - aproximação documentada em `lastfm.py`.
+
+Métodos que exigem histórico de USUÁRIO (top faixas/artistas, reproduzidas
+recentemente - Fase 2, precisaria de um username do Last.fm vinculado) e
+playlist/playback (Fase 3 - Last.fm não faz streaming, vai exigir um provedor
+DIFERENTE, ex.: Spotify com OAuth de usuário de verdade) levantam
+`ProvedorIndisponivel` com mensagem clara.
 
 `ProvedorIndisponivel` é a única forma de falha esperada - nunca vira dado
 inventado (seção 27: "nunca inventar músicas, artistas, datas ou métricas quando o
@@ -70,8 +97,9 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
   gênero.
 - `POST /perfil/discovery_level` `{"valor"}` (0.0-1.0).
 - `GET /radar/atual?forcar=0|1` - devolve o último Radar já gerado hoje (a menos que
-  `forcar=1`); gera um novo coletando lançamentos + busca pelos artistas favoritos.
-  503 com `{"erro", "radar": []}` se o provedor não estiver disponível.
+  `forcar=1`); gera um novo coletando chart global + faixas dos artistas favoritos +
+  faixas por gênero preferido. 503 com `{"erro", "radar": []}` se o provedor não
+  estiver disponível.
 - `GET /radar/historico?limite=N` - últimas N recomendações (mais recente primeiro).
 - `POST /radar/feedback` `{"track_id", "feedback", "genero"}` - `feedback` é
   `"positivo"` ou `"negativo"`; `genero` vem de quem está mandando (a GAIA reenvia o
@@ -86,15 +114,18 @@ HESTIA/MOIRAI depois do bug real de cache stale documentado lá
 
 ## O que fica pendente pra Fase 2/3 (ver `TODO.md`)
 
-Histórico real de reprodução, peso comportamental, OAuth de usuário (playlists,
-top faixas/artistas, "em alta" via provedor), Playlist Descobertas automática, Em
-Alta, Redescobertas dedicadas, nível de descoberta configurável de verdade
-(hoje só persiste o valor, não influencia o ranking ainda), recomendações
-contextuais, múltiplos provedores musicais.
+Histórico real de reprodução, peso comportamental (username do Last.fm
+vinculado), Playlist Descobertas automática (precisa de um provedor com
+streaming - Last.fm não faz), Em Alta dedicado, Redescobertas dedicadas, nível
+de descoberta configurável de verdade (hoje só persiste o valor, não influencia
+o ranking ainda), recomendações contextuais, playback/playlist de verdade
+(exige um segundo provedor com OAuth de usuário, ex.: Spotify).
 
-## Integração com a GAIA (a fazer no repo dela)
+## Integração com a GAIA (feita no repo dela)
 
-`integrations/echo_client.py` (mesmo padrão de `hestia_client.py`) + uma tag sob
-demanda (ex.: `<RADAR_MUSICAL>`) pra o usuário poder pedir o Radar em conversa -
-cadência proativa semanal (Agendador Diário) fica como próximo passo depois de
-validar a busca/ranking com uma credencial Spotify real.
+`integrations/echo_client.py` (mesmo padrão de `hestia_client.py`) + tag
+`<RADAR_MUSICAL>` (`core/tools/handlers.py`) pra o usuário poder pedir o Radar em
+conversa, mais `garantir_echo_rodando()` subindo o processo automaticamente no
+boot da GAIA (`integrations/iris_bridge.py`, mesmo padrão do ERIS). Cadência
+proativa semanal (Agendador Diário) ainda fica como próximo passo - hoje o Radar
+só é GERADO sob demanda.

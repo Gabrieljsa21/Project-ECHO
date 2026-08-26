@@ -27,15 +27,25 @@ def _ler_corpo_json(handler):
 
 
 def _coletar_candidatos(provedor, perfil, limite_geral=40):
-    """Lançamentos gerais + busca dedicada pelos artistas favoritos - senão o Radar
-    nunca saberia de música nova de quem o usuário já gosta, só do que o provedor
-    considera "lançamento em destaque" globalmente. Para na primeira falha do
-    provedor no meio do loop (ex.: rate limit) e segue com o que já tiver coletado,
-    em vez de derrubar a geração do Radar inteira."""
+    """3 fontes - senão o Radar nunca saberia de música de quem o usuário já
+    gosta nem teria candidato dedicado pros gêneros preferidos, só o que o
+    provedor considera "popular" globalmente:
+    1. chart global (`obter_lancamentos_novos`) - alimenta compatibilidade/relevância;
+    2. faixas dos artistas favoritos (`obter_faixas_do_artista`) - compatibilidade forte;
+    3. faixas por gênero preferido (`obter_faixas_por_tag`) - descoberta/exploração,
+       senão essas 2 categorias ficariam só com o que sobra do chart global.
+    Para na primeira falha do provedor dentro de cada loop (ex.: rate limit) e
+    segue com o que já tiver coletado, em vez de derrubar o Radar inteiro."""
     candidatos = list(provedor.obter_lancamentos_novos(limite_geral))
     for artista in perfil["favorite_artists"][:10]:
         try:
-            candidatos.extend(provedor.buscar_faixa(f'artist:"{artista["nome"]}"'))
+            candidatos.extend(provedor.obter_faixas_do_artista(artista["nome"]))
+        except ProvedorIndisponivel:
+            break
+    generos_ordenados = sorted(perfil["preferred_genres"].items(), key=lambda kv: kv[1], reverse=True)
+    for genero, _peso in generos_ordenados[:5]:
+        try:
+            candidatos.extend(provedor.obter_faixas_por_tag(genero))
         except ProvedorIndisponivel:
             break
     return candidatos

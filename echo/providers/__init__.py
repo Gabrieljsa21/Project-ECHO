@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """Abstração do provedor musical (seção 17 do ECHO_SPEC) - o motor de recomendação
 (`core/recomendador.py`, `core/radar.py`) nunca fala com uma API de streaming
-diretamente, só com essa interface. Trocar de provedor (Spotify -> outro) não deve
-exigir mudança no ranking/Radar (princípio 7 da seção 31)."""
+diretamente, só com essa interface. Trocar de provedor não deve exigir mudança no
+ranking/Radar (princípio 7 da seção 31) - prova real disso: a implementação de
+referência trocou de Spotify pra Last.fm em 2026-08-25 (ver `lastfm.py` e
+`ARQUITETURA.md`) sem tocar em nenhum módulo de `core/`."""
 
 
 class ProvedorIndisponivel(Exception):
@@ -17,6 +19,12 @@ class ProvedorMusical:
         raise NotImplementedError
 
     def buscar_faixa(self, query):
+        raise NotImplementedError
+
+    def obter_faixas_do_artista(self, nome, limite=10):
+        raise NotImplementedError
+
+    def obter_faixas_por_tag(self, tag, limite=10):
         raise NotImplementedError
 
     def obter_lancamentos_novos(self, limite=20):
@@ -45,8 +53,8 @@ class ProvedorMusical:
 
 
 def obter_provedor():
-    """Único provedor implementado na Fase 1 (Spotify, Client Credentials). Import
-    tardio pra evitar ciclo (spotify.py importa `ProvedorMusical`/`ProvedorIndisponivel`
-    deste módulo)."""
-    from echo.providers.spotify import ProvedorSpotify
-    return ProvedorSpotify()
+    """Único provedor implementado na Fase 1 (Last.fm, sem OAuth de usuário - só
+    chave de API grátis). Import tardio pra evitar ciclo (lastfm.py importa
+    `ProvedorMusical`/`ProvedorIndisponivel` deste módulo)."""
+    from echo.providers.lastfm import ProvedorLastfm
+    return ProvedorLastfm()
