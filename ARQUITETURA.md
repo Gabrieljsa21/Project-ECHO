@@ -175,6 +175,19 @@ artificial de perfil (não há pedido explícito pra reforçar, diferente da
 continuação). Funciona mesmo com perfil TOTALMENTE vazio - o chart global
 sozinho já supre candidato via relevância/exploração.
 
+**Latência reduzida (2026-08-26, achado real: "Caos esta demorando para
+iniciar")** - `/radar/semente` chamava `_coletar_candidatos` com os MESMOS
+limites do Radar semanal (até 1 chart + 10 artistas + 5 gêneros = até 16
+chamadas sequenciais ao provedor), mas essa rota bloqueia uma interação AO
+VIVO do Discord, diferente do Radar (roda em background). Medido: ~9.8s
+antes, a maior parte (~4.3s) em `obter_lancamentos_novos` resolvendo
+gênero de CADA artista único do chart (até 40, `_resolver_generos_por_
+artista`). Reduzido só nesta rota (`max_artistas=1, max_generos=3,
+limite_geral=15`, mesma ordem de grandeza de `continuacao.sugerir_proxima`)
+- ~4.5s medido depois. `_coletar_candidatos` ganhou os parâmetros
+`max_artistas`/`max_generos` pra isso, sem afetar o Radar semanal
+(continua chamando sem eles, valores padrão 10/5 preservados).
+
 ## Persistência (`data/`, gitignored)
 
 `perfil.json`, `historico_recomendacoes.json`, `radar_estado.json` - lidos do disco a

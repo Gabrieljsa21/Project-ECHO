@@ -88,3 +88,11 @@ popularidade, todos passando.
   novos (42 no total), todos passando; validado ao vivo contra o Last.fm
   real (like e dislike na mesma faixa, segunda chamada atualiza a mesma
   entrada em vez de duplicar).
+
+### Correções
+- **`/radar/semente` demorando ~10s pra responder** (2026-08-26, "Caos esta
+  demorando para iniciar") - usava os mesmos limites do Radar semanal (até
+  16 chamadas sequenciais ao provedor), mas bloqueia uma interação AO VIVO
+  do Discord. Reduzido só nessa rota (`_coletar_candidatos` ganhou
+  `max_artistas`/`max_generos`) - de ~9.8s pra ~4.5s medido, sem afetar o
+  Radar semanal (roda em background, mantém os limites originais).
