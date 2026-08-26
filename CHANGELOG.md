@@ -55,3 +55,16 @@ popularidade, todos passando.
   que ativou), então o caminho (1) veio vazio de propósito (não inventou
   dado); caminho (2) segue disponível pra esse caso. 27 testes automatizados,
   todos passando.
+- **Continuação ao vivo - `POST /radar/proxima`** (2026-08-25, pedido do
+  usuário: "quero q alguem seja meu dj exclusivo... qnd eu pedir uma
+  musica, ele continue tocando outras em sequencia na mesma vibe") -
+  `echo/core/continuacao.py`, uma sugestão por vez semeada pela faixa
+  tocando agora (quem toca é o [Project ERIS](../../Project-ERIS), Modo
+  Música novo, substitui o Jockie Music). Perfil efetivo em memória (nunca
+  persistido) trata o artista/gêneros da faixa atual como preferência forte
+  só pra essa sugestão. Dedup de sessão via parâmetro `excluir` (quem
+  chama, o ERIS, mantém a lista do que já tocou na call) - resolve a
+  queixa real do usuário sobre o Jockie repetir depois de um tempo. 32
+  testes automatizados (5 novos), todos passando; validado ao vivo contra
+  o Last.fm real (sugeriu corretamente outra faixa do mesmo artista,
+  respeitando exclusão).

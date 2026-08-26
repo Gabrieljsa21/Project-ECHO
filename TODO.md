@@ -28,14 +28,18 @@ credencial real do usuário. Ver `CHANGELOG.md` pro detalhe completo.
 
 ## Prioridade baixa (Fase 3 do ECHO_SPEC)
 
-- **Playback/playlist de verdade** (`criar_playlist`/`adicionar_faixa_playlist`/
-  `tocar_faixa`) - Last.fm não faz streaming, precisa de um SEGUNDO provedor
-  com OAuth Authorization Code de usuário de verdade (ex.: Spotify, se a
-  instabilidade de política dele se resolver, ou outro serviço). Complexidade:
-  alta. Status: não iniciado.
-- **Playlist "Descobertas da GAIA" automática** (seção 11) - depende do item
-  acima (precisa de playback/playlist real). Complexidade: média. Status: não
-  iniciado.
+- **Playback de verdade - RESOLVIDO por outro caminho (2026-08-25)**: o
+  Modo Música do [Project ERIS](../../Project-ERIS) já toca música de
+  verdade numa call (YouTube via `yt-dlp`) consultando o ECHO só pra
+  "qual é a próxima" (`POST /radar/proxima`) - nunca precisou de
+  `criar_playlist`/`adicionar_faixa_playlist`/`tocar_faixa` na abstração de
+  provedor do ECHO, que continuam sem implementação (Last.fm não faz
+  streaming, e o caminho real acabou não precisando de OAuth do Spotify).
+- **Playlist "Descobertas da GAIA" automática** (seção 11 - SALVAR uma
+  playlist gerenciada, diferente de "tocar" que já está resolvido acima) -
+  precisa de um provedor com biblioteca/playlist de usuário de verdade
+  (ex.: Spotify com OAuth Authorization Code, se a instabilidade de
+  política dele se resolver). Complexidade: alta. Status: não iniciado.
 - **Recomendações contextuais** (seção 10) - Complexidade: alta (depende de sinal de
   contexto que a GAIA não expõe hoje). Status: não iniciado.
 - **Múltiplos provedores musicais** (rodar Last.fm + Spotify/YouTube Music juntos,

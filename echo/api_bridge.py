@@ -12,6 +12,7 @@ from echo.core import perfil as perfil_mod
 from echo.core import radar as radar_mod
 from echo.core import feedback as feedback_mod
 from echo.core import historico as historico_mod
+from echo.core import continuacao as continuacao_mod
 from echo.providers import obter_provedor, ProvedorIndisponivel
 
 LOCAL_API_HOST = "127.0.0.1"
@@ -114,6 +115,19 @@ class _API(BaseHTTPRequestHandler):
                 self._responder_404()
             else:
                 self._responder_json(entrada)
+        elif caminho == "/radar/proxima":
+            # 🔥 Continuação ao vivo (Modo Música do ERIS, 2026-08-25) - UMA
+            # sugestão semeada pela faixa tocando agora, não o lote semanal do
+            # Radar. Ver echo/core/continuacao.py.
+            try:
+                provedor = obter_provedor()
+                perfil = perfil_mod.carregar_perfil()
+                proxima = continuacao_mod.sugerir_proxima(
+                    provedor, perfil, corpo.get("artista_atual", ""), corpo.get("titulo_atual", ""), corpo.get("excluir", []),
+                )
+                self._responder_json({"proxima": proxima})
+            except ProvedorIndisponivel as e:
+                self._responder_json({"erro": str(e), "proxima": None}, status=503)
         elif caminho == "/perfil/importar_historico":
             try:
                 provedor = obter_provedor()
