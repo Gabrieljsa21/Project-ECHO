@@ -27,7 +27,7 @@ def _ler_corpo_json(handler):
         return {}
 
 
-def _coletar_candidatos(provedor, perfil, limite_geral=40):
+def _coletar_candidatos(provedor, perfil, limite_geral=40, max_artistas=10, max_generos=5):
     """3 fontes - senão o Radar nunca saberia de música de quem o usuário já
     gosta nem teria candidato dedicado pros gêneros preferidos, só o que o
     provedor considera "popular" globalmente:
@@ -36,15 +36,22 @@ def _coletar_candidatos(provedor, perfil, limite_geral=40):
     3. faixas por gênero preferido (`obter_faixas_por_tag`) - descoberta/exploração,
        senão essas 2 categorias ficariam só com o que sobra do chart global.
     Para na primeira falha do provedor dentro de cada loop (ex.: rate limit) e
-    segue com o que já tiver coletado, em vez de derrubar o Radar inteiro."""
+    segue com o que já tiver coletado, em vez de derrubar o Radar inteiro.
+
+    `max_artistas`/`max_generos` (2026-08-26, achado real: `/caos` demorava
+    ~10s pra iniciar) - o Radar semanal (rodando em background) pode pagar
+    até 1+10+5=16 chamadas sequenciais ao provedor sem problema, mas
+    `/radar/semente` chama isso com o usuário esperando AO VIVO numa call -
+    reduzido pra bater com a mesma leveza de `continuacao.sugerir_proxima`
+    (no máximo 1 artista/3 gêneros na semeadura normal)."""
     candidatos = list(provedor.obter_lancamentos_novos(limite_geral))
-    for artista in perfil["favorite_artists"][:10]:
+    for artista in perfil["favorite_artists"][:max_artistas]:
         try:
             candidatos.extend(provedor.obter_faixas_do_artista(artista["nome"]))
         except ProvedorIndisponivel:
             break
     generos_ordenados = sorted(perfil["preferred_genres"].items(), key=lambda kv: kv[1], reverse=True)
-    for genero, _peso in generos_ordenados[:5]:
+    for genero, _peso in generos_ordenados[:max_generos]:
         try:
             candidatos.extend(provedor.obter_faixas_por_tag(genero))
         except ProvedorIndisponivel:
@@ -143,11 +150,13 @@ class _API(BaseHTTPRequestHandler):
         elif caminho == "/radar/semente":
             # 🔥 Ponto de partida do `/caos` (ERIS, 2026-08-26) - sugestão SEM
             # faixa atual pra semear (diferente de `/radar/proxima`), mesma
-            # coleta de 3 fontes do Radar semanal. Ver echo/core/continuacao.py.
+            # coleta de 3 fontes do Radar semanal, mas com o teto reduzido
+            # (usuário esperando AO VIVO - ver docstring de _coletar_candidatos,
+            # achado real: essa chamada levava ~10s sem o corte).
             try:
                 provedor = obter_provedor()
                 perfil = perfil_mod.carregar_perfil()
-                candidatos = _coletar_candidatos(provedor, perfil)
+                candidatos = _coletar_candidatos(provedor, perfil, limite_geral=15, max_artistas=1, max_generos=3)
                 semente = continuacao_mod.sugerir_semente(candidatos, perfil, corpo.get("excluir", []))
                 self._responder_json({"semente": semente})
             except ProvedorIndisponivel as e:
