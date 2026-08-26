@@ -28,7 +28,7 @@ deliberadamente evita (seção 6.4 - Exploração).
 - [x] Estrutura do Modo DJ (`echo/core/`, `echo/providers/`)
 - [x] Perfil musical persistente (`data/perfil.json`)
 - [x] Cadastro manual de artistas/gêneros favoritos
-- [x] Busca de lançamentos (Spotify, Client Credentials)
+- [x] Busca de lançamentos (Last.fm - chart global + gênero, sem login/assinatura)
 - [x] Radar Musical semanal (geração sob demanda - cadência real fica com o
       Agendador Diário da GAIA)
 - [x] Histórico de recomendações + dedup (redescoberta só após 90 dias)
@@ -47,9 +47,10 @@ uv pip install -e .
 python -m echo.main
 ```
 
-Sem `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` (ver `.env.example`), o ECHO sobe
-normalmente mas `GET /status` reporta `provedor_configurado: false` e o Radar fica
-vazio - nunca inventa lançamento/música pra preencher (seção 27 do ECHO_SPEC).
+Sem `LASTFM_API_KEY` (ver `.env.example` - chave grátis, sem cartão, gerada em
+last.fm/api/account/create), o ECHO sobe normalmente mas `GET /status` reporta
+`provedor_configurado: false` e o Radar fica vazio - nunca inventa lançamento/
+música pra preencher (seção 27 do ECHO_SPEC).
 
 Sem loop de manutenção próprio (mesmo padrão do HESTIA) - o ECHO fica parado
 esperando requisição HTTP na porta 8774 (`echo/api_bridge.py`). A geração do Radar só
@@ -64,6 +65,9 @@ pytest
 
 ## Integração com a GAIA
 
-`integrations/echo_client.py` (repo da GAIA) fala com a ponte HTTP daqui. Ver
-`ARQUITETURA.md` pro contrato HTTP completo e as decisões de design (provedor
-desacoplado, ranking sem LLM, diversidade/dedup).
+`integrations/echo_client.py` (repo da GAIA) fala com a ponte HTTP daqui, e
+`garantir_echo_rodando()` sobe o processo automaticamente no boot dela (mesmo
+padrão de ERIS/HESTIA/MOIRAI) - não precisa rodar `python -m echo.main` na mão.
+Ver `ARQUITETURA.md` pro contrato HTTP completo e as decisões de design
+(provedor desacoplado, por que Last.fm em vez de Spotify, ranking sem LLM,
+diversidade/dedup).
