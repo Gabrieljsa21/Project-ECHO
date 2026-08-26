@@ -125,7 +125,12 @@ o ranking ainda), recomendações contextuais, playback/playlist de verdade
 
 `integrations/echo_client.py` (mesmo padrão de `hestia_client.py`) + tag
 `<RADAR_MUSICAL>` (`core/tools/handlers.py`) pra o usuário poder pedir o Radar em
-conversa, mais `garantir_echo_rodando()` subindo o processo automaticamente no
-boot da GAIA (`integrations/iris_bridge.py`, mesmo padrão do ERIS). Cadência
-proativa semanal (Agendador Diário) ainda fica como próximo passo - hoje o Radar
-só é GERADO sob demanda.
+conversa, `garantir_echo_rodando()` subindo o processo automaticamente no boot
+da GAIA (`integrations/iris_bridge.py`, mesmo padrão do ERIS), e entrega
+PROATIVA semanal via Agendador Diário
+(`run.py::_verificar_e_executar_radar_musical_semanal`, opt-in, desligada por
+padrão) - toggle + horário configuráveis no Painel (Notificações -> "🎧 Radar
+Musical"). A entrega proativa usa `resumir_com_ia` pra apresentar a seleção com
+a persona (nunca inventa música/artista - só sintetiza a partir do Radar real);
+a tag sob demanda continua disponível independente desse toggle, gatilhada só
+por `echo_client.esta_configurado()`.

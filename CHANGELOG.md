@@ -33,8 +33,12 @@
 22 testes automatizados (`tests/`) cobrindo perfil/histórico/radar/normalização de
 popularidade, todos passando.
 
-### Pendências conhecidas
-- Nunca testado contra a API real do Last.fm (só candidatos sintéticos nos testes) -
-  precisa de `LASTFM_API_KEY` real (gratuita, ver `.env.example`).
-- Cadência proativa semanal via Agendador Diário ainda não wireada - Radar só é
-  GERADO sob demanda (o processo já fica de pé sozinho, isso está resolvido).
+- **Validado contra a API real do Last.fm** (2026-08-25) - `LASTFM_API_KEY` real
+  configurada pelo usuário, `GET /status` confirmou `provedor_configurado: true`
+  e um Radar Musical real foi gerado com sucesso (10 músicas reais do chart
+  global do Last.fm, ex.: "Creep" - Radiohead, "505" - Arctic Monkeys).
+- **Cadência proativa semanal wireada** (2026-08-25, repo da GAIA) -
+  `run.py::_verificar_e_executar_radar_musical_semanal`, entra no Agendador
+  Diário (opt-in, desligado por padrão), toggle+horário no Painel
+  (Notificações -> "🎧 Radar Musical"). Fase 1 do MVP fica **completa** - Radar
+  Musical funciona sob demanda (`<RADAR_MUSICAL>`) E proativamente.
