@@ -75,10 +75,33 @@ metadado/scrobbling - encaixa melhor que o Spotify já encaixava:
   sem teto) pra 0-100, já que o Last.fm não tem um score de popularidade oficial
   como o Spotify tinha - aproximação documentada em `lastfm.py`.
 
-Métodos que exigem histórico de USUÁRIO (top faixas/artistas, reproduzidas
-recentemente - Fase 2, precisaria de um username do Last.fm vinculado) e
-playlist/playback (Fase 3 - Last.fm não faz streaming, vai exigir um provedor
-DIFERENTE, ex.: Spotify com OAuth de usuário de verdade) levantam
+### Histórico real de escuta e cadastro em lote (2026-08-25, Fase 2 antecipada)
+
+Pedido do usuário: "ela consegue absorver minhas playlist do spotfy p saber
+meus gostos?" - resolvido com 2 caminhos, sem precisar de OAuth do Spotify:
+
+1. **`LASTFM_USERNAME` vinculado** (opcional, `.env`) - se o usuário já usa
+   scrobbling (Spotify -> Last.fm), `obter_top_artistas_usuario`/
+   `obter_top_faixas_usuario`/`obter_reproduzidas_recentemente` usam
+   `user.gettopartists`/`user.gettoptracks`/`user.getrecenttracks` pra ler o
+   histórico REAL de escuta - `core.perfil.importar_favoritos_do_historico`
+   pesa cada gênero pela POSIÇÃO no ranking real (mais tocado = mais peso),
+   nunca diminui um peso já mais alto (não apaga ajuste fino feito por
+   feedback manual). **Achado real ao testar**: conexão scrobbling pode
+   existir mas estar vazia (`playcount: 0`) se o usuário não tiver escutado
+   nada desde que ativou - nesse caso não há dado real pra importar, e o
+   sistema não inventa nada, só devolve lista vazia.
+2. **Cadastro em lote sem scrobbling** (`/perfil/importar_artistas`) - o
+   usuário cola uma playlist/lista de artistas em conversa, a LLM extrai os
+   nomes REAIS do texto (tag `<CADASTRAR_ARTISTAS:nome1|nome2|...>` no repo
+   da GAIA) e o ECHO resolve o gênero de cada um automaticamente
+   (`provedor.resolver_generos`) - reaproveita `adicionar_artista_favorito`
+   (peso FLAT por artista, diferente do caminho 1 - a ordem de uma playlist
+   colada não representa "mais tocado primeiro" de verdade, seria desonesto
+   fingir que representa).
+
+Métodos de playlist/playback (Fase 3 - Last.fm não faz streaming, vai exigir
+um provedor DIFERENTE, ex.: Spotify com OAuth de usuário de verdade) levantam
 `ProvedorIndisponivel` com mensagem clara.
 
 `ProvedorIndisponivel` é a única forma de falha esperada - nunca vira dado
@@ -88,7 +111,7 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
 
 ## Contrato HTTP (porta 8774, `echo/api_bridge.py`)
 
-- `GET /status` - `{"provedor_configurado": bool}`.
+- `GET /status` - `{"provedor_configurado": bool, "username_vinculado": bool}`.
 - `GET /perfil` - perfil musical completo.
 - `POST /perfil/artista_favorito` `{"nome", "genero"}` - também remove de
   rejeitados se estava lá.
@@ -101,6 +124,10 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
   faixas por gênero preferido. 503 com `{"erro", "radar": []}` se o provedor não
   estiver disponível.
 - `GET /radar/historico?limite=N` - últimas N recomendações (mais recente primeiro).
+- `POST /perfil/importar_historico` `{"limite"}` - seed do perfil a partir do
+  histórico real de escuta (`LASTFM_USERNAME` obrigatório). 503 se não vinculado.
+- `POST /perfil/importar_artistas` `{"nomes": [...]}` - cadastro em lote de
+  artistas favoritos (gênero resolvido automaticamente por artista).
 - `POST /radar/feedback` `{"track_id", "feedback", "genero"}` - `feedback` é
   `"positivo"` ou `"negativo"`; `genero` vem de quem está mandando (a GAIA reenvia o
   que recebeu junto com a faixa no Radar).

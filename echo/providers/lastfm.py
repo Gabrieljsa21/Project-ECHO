@@ -45,9 +45,18 @@ def _normalizar_popularidade(listeners):
 class ProvedorLastfm(ProvedorMusical):
     def __init__(self):
         self.api_key = os.getenv("LASTFM_API_KEY")
+        # 🔥 Username vinculado (2026-08-25, Fase 2 antecipada) - se o usuário já
+        # usa scrobbling (Spotify -> Last.fm, ver last.fm/about/trackmymusic), o
+        # histórico REAL de escuta fica disponível sem precisar de OAuth nenhum
+        # do Spotify, só desse username público. Sem ele, os métodos abaixo
+        # continuam indisponíveis (não é obrigatório pro resto do provedor).
+        self.username = os.getenv("LASTFM_USERNAME")
 
     def esta_configurado(self):
         return bool(self.api_key)
+
+    def tem_username_vinculado(self):
+        return bool(self.username)
 
     def _get(self, method, **params):
         if not self.esta_configurado():
@@ -143,14 +152,65 @@ class ProvedorLastfm(ProvedorMusical):
             "obter_lancamentos_novos (mesma fonte, chart.gettoptracks)"
         )
 
+    def _exigir_username(self):
+        if not self.tem_username_vinculado():
+            raise ProvedorIndisponivel(
+                "LASTFM_USERNAME não configurado no .env - vincule seu username "
+                "do Last.fm (last.fm/user/<usuario>) pra usar histórico real de escuta"
+            )
+
     def obter_reproduzidas_recentemente(self, limite=20):
-        raise ProvedorIndisponivel("requer username do Last.fm vinculado (Fase 2 do ECHO_SPEC) - não implementado ainda")
+        """`user.getrecenttracks` - histórico real de reprodução (via scrobbling,
+        ex.: Spotify -> Last.fm). Formato de artista É DIFERENTE dos outros
+        endpoints (`artist.#text`, não `artist.name`) - a própria API do Last.fm
+        não é consistente entre métodos aqui."""
+        self._exigir_username()
+        dados = self._get("user.getrecenttracks", user=self.username, limit=limite)
+        faixas = dados.get("recenttracks", {}).get("track", [])
+        resultado = []
+        for f in faixas:
+            artista_bruto = f.get("artist")
+            nome_artista = artista_bruto.get("#text") if isinstance(artista_bruto, dict) else (artista_bruto or "Desconhecido")
+            resultado.append({
+                "titulo": f.get("name", "?"),
+                "artista": nome_artista,
+                "album": None,
+                "data_lancamento": None,
+                "popularidade": None,
+                "generos": [],
+                "url_lastfm": f.get("url"),
+                "fonte": "recente_usuario",
+            })
+        return resultado
 
-    def obter_top_faixas_usuario(self, limite=20):
-        raise ProvedorIndisponivel("requer username do Last.fm vinculado (Fase 2 do ECHO_SPEC) - não implementado ainda")
+    def obter_top_faixas_usuario(self, limite=20, periodo="12month"):
+        """`user.gettoptracks` - faixas mais tocadas de verdade pelo usuário
+        (`periodo`: overall/7day/1month/3month/6month/12month - 12 meses por
+        padrão, equilíbrio entre "gosto atual" e "gosto de sempre")."""
+        self._exigir_username()
+        dados = self._get("user.gettoptracks", user=self.username, period=periodo, limit=limite)
+        faixas = dados.get("toptracks", {}).get("track", [])
+        nomes_artistas = [f.get("artist", {}).get("name") for f in faixas if isinstance(f.get("artist"), dict)]
+        generos = self._resolver_generos_por_artista(nomes_artistas)
+        return [self._normalizar_faixa(f, generos, "historico_usuario") for f in faixas]
 
-    def obter_top_artistas_usuario(self, limite=20):
-        raise ProvedorIndisponivel("requer username do Last.fm vinculado (Fase 2 do ECHO_SPEC) - não implementado ainda")
+    def obter_top_artistas_usuario(self, limite=20, periodo="12month"):
+        """`user.gettopartists` - base real pra `core.perfil.
+        importar_favoritos_do_historico` (seed do perfil musical a partir do
+        histórico de escuta de verdade, em vez de cadastro manual um por um)."""
+        self._exigir_username()
+        dados = self._get("user.gettopartists", user=self.username, period=periodo, limit=limite)
+        artistas = dados.get("topartists", {}).get("artist", [])
+        generos = self._resolver_generos_por_artista([a.get("name") for a in artistas])
+        return [
+            {
+                "nome": a["name"],
+                "playcount": int(a.get("playcount", 0)),
+                "rank": int(a.get("rank", i + 1)),
+                "generos": generos.get(a["name"].lower(), []),
+            }
+            for i, a in enumerate(artistas)
+        ]
 
     def criar_playlist(self, nome, descricao=""):
         raise ProvedorIndisponivel("Last.fm não tem playlists/streaming - Fase 3 precisa de outro provedor (ex.: Spotify com OAuth de usuário)")
@@ -160,3 +220,6 @@ class ProvedorLastfm(ProvedorMusical):
 
     def tocar_faixa(self, track_id):
         raise ProvedorIndisponivel("Last.fm não toca música - Fase 3 precisa de outro provedor (ex.: Spotify com OAuth de usuário)")
+
+    def resolver_generos(self, nomes_artistas):
+        return self._resolver_generos_por_artista(nomes_artistas)

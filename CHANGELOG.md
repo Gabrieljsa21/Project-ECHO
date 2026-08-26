@@ -42,3 +42,16 @@ popularidade, todos passando.
   Diário (opt-in, desligado por padrão), toggle+horário no Painel
   (Notificações -> "🎧 Radar Musical"). Fase 1 do MVP fica **completa** - Radar
   Musical funciona sob demanda (`<RADAR_MUSICAL>`) E proativamente.
+- **Importação de gosto musical (Fase 2 antecipada, 2026-08-25)** - pedido do
+  usuário: "ela consegue absorver minhas playlist do spotfy p saber meus
+  gostos?". 2 caminhos, sem OAuth do Spotify: (1) `obter_top_artistas_usuario`/
+  `obter_top_faixas_usuario`/`obter_reproduzidas_recentemente` via
+  `LASTFM_USERNAME` vinculado (histórico real de scrobbling) +
+  `core.perfil.importar_favoritos_do_historico` (peso por posição no ranking
+  real); (2) `POST /perfil/importar_artistas` - cadastro em lote colando uma
+  playlist/lista (tag `<CADASTRAR_ARTISTAS>` no repo da GAIA), gênero
+  resolvido automaticamente. **Achado real**: testado com a conta do usuário -
+  scrobbling estava conectado mas com `playcount: 0` (sem escutar nada desde
+  que ativou), então o caminho (1) veio vazio de propósito (não inventou
+  dado); caminho (2) segue disponível pra esse caso. 27 testes automatizados,
+  todos passando.
