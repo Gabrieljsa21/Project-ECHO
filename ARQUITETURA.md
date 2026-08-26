@@ -134,6 +134,10 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
 - `POST /radar/proxima` `{"artista_atual", "titulo_atual", "excluir"}` -
   continuação ao vivo (ver seção abaixo). `excluir`: lista de "artista::titulo"
   já tocados na sessão atual.
+- `POST /radar/semente` `{"excluir"}` - sugestão de PARTIDA sem faixa atual
+  pra semear (`/caos` do ERIS, ver seção abaixo), mesma composição de
+  candidatos do Radar semanal (chart global + artistas favoritos + gêneros
+  preferidos, funciona mesmo com perfil vazio).
 
 ## Continuação ao vivo (Modo Música do ERIS, 2026-08-25)
 
@@ -153,6 +157,17 @@ ao histórico salvo. Dedup de sessão (`excluir`) é responsabilidade de quem
 chama (o ERIS mantém a lista do que já tocou nesta call) - o `core.
 recomendador.ranquear` ainda aplica o dedup de 90 dias do Radar semanal por
 baixo, como segunda camada.
+
+**`/caos` do ERIS (2026-08-26)** - pedido do usuário: "ERIS entra no canal
+de voz do usuário e inicia uma sessão musical contínua... sem exigir
+artista, gênero, música ou qualquer outra referência inicial". Sem faixa
+atual pra semear, `echo/core/continuacao.py::sugerir_semente` ranqueia
+direto os candidatos que o CHAMADOR já coletou (mesma composição de 3
+fontes de `api_bridge.py::_coletar_candidatos` usada pelo Radar semanal -
+chart global + artistas favoritos + gêneros preferidos), sem boost
+artificial de perfil (não há pedido explícito pra reforçar, diferente da
+continuação). Funciona mesmo com perfil TOTALMENTE vazio - o chart global
+sozinho já supre candidato via relevância/exploração.
 
 ## Persistência (`data/`, gitignored)
 

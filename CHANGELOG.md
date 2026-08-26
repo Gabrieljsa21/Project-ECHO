@@ -68,3 +68,13 @@ popularidade, todos passando.
   testes automatizados (5 novos), todos passando; validado ao vivo contra
   o Last.fm real (sugeriu corretamente outra faixa do mesmo artista,
   respeitando exclusão).
+- **Sugestão de partida sem referência - `POST /radar/semente`** (2026-08-26,
+  pedido do usuário: "ERIS entra no canal de voz do usuário e inicia uma
+  sessão musical contínua... sem exigir artista, gênero, música ou qualquer
+  outra referência inicial", comando `/caos` no ERIS) - `echo/core/
+  continuacao.py::sugerir_semente`, ranqueia direto a mesma composição de
+  candidatos do Radar semanal (chart global + artistas favoritos + gêneros
+  preferidos) sem precisar de faixa atual, funciona mesmo com perfil
+  totalmente vazio. 4 testes novos (36 no total), todos passando; validado
+  ao vivo contra o Last.fm real com o perfil do usuário (sugeriu Radiohead,
+  depois Maroon 5 ao excluir a primeira).
