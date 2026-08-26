@@ -1,16 +1,9 @@
 # TODO - Project ECHO
 
-## Prioridade alta
-
-- **Validar contra a API real do Last.fm** (gerar chave grátis em
-  last.fm/api/account/create, testar `buscar_faixa`/`obter_faixas_do_artista`/
-  `obter_faixas_por_tag`/`obter_lancamentos_novos` com dados reais) -
-  Complexidade: baixa, mas bloqueada por credencial que só o usuário pode gerar.
-  Status: não iniciado.
-- **Cadência proativa semanal via Agendador Diário da GAIA** (hoje o Radar só é
-  GERADO sob demanda via `GET /radar/atual` - o processo em si já sobe sozinho
-  no boot, `garantir_echo_rodando()`) - Complexidade: baixa/média. Status: não
-  iniciado.
+Fase 1 do MVP **completa** (2026-08-25): perfil musical, ranking determinístico,
+Radar Musical sob demanda E proativo (semanal, via Agendador Diário da GAIA),
+histórico/dedup, feedback 👍/👎, validado contra a API real do Last.fm com
+credencial real do usuário. Ver `CHANGELOG.md` pro detalhe completo.
 
 ## Prioridade média (Fase 2 do ECHO_SPEC)
 
@@ -44,8 +37,3 @@
   contexto que a GAIA não expõe hoje). Status: não iniciado.
 - **Múltiplos provedores musicais** (rodar Last.fm + Spotify/YouTube Music juntos,
   por exemplo) - Complexidade: alta. Status: não iniciado.
-
-## Bloqueado por decisão/insumo do usuário
-
-- Credencial real do Last.fm (`LASTFM_API_KEY`) - sem isso, nada do provedor pode
-  ser validado contra dado real.
