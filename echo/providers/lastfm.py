@@ -26,7 +26,13 @@ _URL_BASE = "http://ws.audioscrobbler.com/2.0/"
 # muito popular) - aproximação documentada, não um score oficial da plataforma.
 _LISTENERS_PISO = 50
 _LISTENERS_TETO = 2_000_000
-_MAX_ARTISTAS_PARA_RESOLVER_GENERO = 20
+# 🔥 50 (2026-08-25, achado real testando com playlists de verdade) - o cadastro
+# em lote (`/perfil/importar_artistas`) é uma ação RARA e disparada pelo próprio
+# usuário (colar uma playlist inteira), não um hot path repetido - um teto baixo
+# demais (20) truncava silenciosamente o gênero de metade de uma importação real
+# de 3 playlists (38 artistas únicos) sem avisar ninguém. 50 ainda protege contra
+# uma explosão de verdade (ex.: um candidato de Radar com centenas de faixas).
+_MAX_ARTISTAS_PARA_RESOLVER_GENERO = 50
 
 
 def _normalizar_popularidade(listeners):
