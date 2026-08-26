@@ -64,3 +64,24 @@ def sugerir_proxima(provedor, perfil, artista_atual, titulo_atual, excluidos=Non
 
     ranqueados = recomendador_mod.ranquear(candidatos_filtrados, perfil_efetivo)
     return ranqueados[0] if ranqueados else None
+
+
+def sugerir_semente(candidatos, perfil, excluidos=None):
+    """Primeira sugestão de uma sessão contínua SEM faixa/artista de partida
+    (2026-08-26, pedido do usuário via `/caos` no ERIS: "sem exigir artista,
+    gênero, música ou qualquer outra referência inicial"). Diferente de
+    `sugerir_proxima`, não há faixa atual pra semear busca/gênero - por isso
+    `candidatos` já vem coletado pelo chamador com a mesma composição de 3
+    fontes do Radar semanal (chart global + artistas favoritos + gêneros
+    preferidos, ver `api_bridge.py::_coletar_candidatos`), o que garante
+    resultado mesmo com perfil totalmente vazio (chart global sozinho já
+    supre candidato). `excluidos`: "artista::titulo" a ignorar (dedup de
+    sessão, mesmo campo de `sugerir_proxima`). Devolve o candidato de maior
+    score pelo perfil real (sem boost artificial - não há pedido explícito
+    pra reforçar), ou None se não achar nada de qualidade."""
+    excluidos_normalizados = {e.lower() for e in (excluidos or [])}
+    candidatos_filtrados = [c for c in candidatos if _id_faixa(c["artista"], c["titulo"]) not in excluidos_normalizados]
+    if not candidatos_filtrados:
+        return None
+    ranqueados = recomendador_mod.ranquear(candidatos_filtrados, perfil)
+    return ranqueados[0] if ranqueados else None

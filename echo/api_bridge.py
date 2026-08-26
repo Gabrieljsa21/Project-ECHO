@@ -128,6 +128,18 @@ class _API(BaseHTTPRequestHandler):
                 self._responder_json({"proxima": proxima})
             except ProvedorIndisponivel as e:
                 self._responder_json({"erro": str(e), "proxima": None}, status=503)
+        elif caminho == "/radar/semente":
+            # 🔥 Ponto de partida do `/caos` (ERIS, 2026-08-26) - sugestão SEM
+            # faixa atual pra semear (diferente de `/radar/proxima`), mesma
+            # coleta de 3 fontes do Radar semanal. Ver echo/core/continuacao.py.
+            try:
+                provedor = obter_provedor()
+                perfil = perfil_mod.carregar_perfil()
+                candidatos = _coletar_candidatos(provedor, perfil)
+                semente = continuacao_mod.sugerir_semente(candidatos, perfil, corpo.get("excluir", []))
+                self._responder_json({"semente": semente})
+            except ProvedorIndisponivel as e:
+                self._responder_json({"erro": str(e), "semente": None}, status=503)
         elif caminho == "/perfil/importar_historico":
             try:
                 provedor = obter_provedor()

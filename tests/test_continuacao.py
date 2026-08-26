@@ -86,3 +86,44 @@ def test_prioriza_genero_da_semente_sobre_candidato_de_tag_incompativel():
     proxima = continuacao_mod.sugerir_proxima(provedor, perfil, "MF DOOM", "Doomsday")
     assert proxima is not None
     assert proxima["generos"] == ["boom bap"]
+
+
+def _perfil_vazio():
+    return {
+        "favorite_artists": [], "disliked_artists": [], "liked_tracks": [], "disliked_tracks": [],
+        "preferred_genres": {}, "preferred_eras": {}, "discovery_level": 0.5,
+    }
+
+
+def test_sugere_semente_funciona_com_perfil_totalmente_vazio():
+    """`/caos` (ERIS) precisa funcionar mesmo sem artista/gênero cadastrado -
+    o chart global sozinho (relevância + exploração) já basta."""
+    candidatos = [_faixa("Trending Now", "Artista Global", ["pop"], 80)]
+    semente = continuacao_mod.sugerir_semente(candidatos, _perfil_vazio())
+    assert semente is not None
+    assert semente["titulo"] == "Trending Now"
+
+
+def test_sugere_semente_prefere_artista_favorito_do_perfil():
+    perfil = _perfil_vazio()
+    perfil["favorite_artists"] = [{"nome": "MF DOOM", "genero": "boom bap"}]
+    perfil["preferred_genres"] = {"boom bap": 0.9}
+    candidatos = [
+        _faixa("Trending Now", "Artista Global", ["pop"], 80),
+        _faixa("Doomsday", "MF DOOM", ["boom bap"], 40),
+    ]
+    semente = continuacao_mod.sugerir_semente(candidatos, perfil)
+    assert semente is not None
+    assert semente["titulo"] == "Doomsday"
+
+
+def test_sugere_semente_sem_candidato_devolve_none():
+    assert continuacao_mod.sugerir_semente([], _perfil_vazio()) is None
+
+
+def test_sugere_semente_respeita_exclusao_de_sessao():
+    candidatos = [_faixa("Trending Now", "Artista Global", ["pop"], 80)]
+    semente = continuacao_mod.sugerir_semente(
+        candidatos, _perfil_vazio(), excluidos=["artista global::trending now"],
+    )
+    assert semente is None
