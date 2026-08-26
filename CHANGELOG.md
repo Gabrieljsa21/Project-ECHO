@@ -96,3 +96,12 @@ popularidade, todos passando.
   do Discord. Reduzido só nessa rota (`_coletar_candidatos` ganhou
   `max_artistas`/`max_generos`) - de ~9.8s pra ~4.5s medido, sem afetar o
   Radar semanal (roda em background, mantém os limites originais).
+- **`obter_faixas_por_tag` sempre devolveu lista vazia** (2026-08-26,
+  achado investigando "usei /caos... ela tocou apenas 1 musica, n mandou
+  mais") - lia a chave errada da resposta do Last.fm (`toptracks` em vez
+  de `tracks`, cada endpoint usa um wrapper diferente apesar do nome
+  parecido). Bug existia desde que o método foi escrito - toda sugestão
+  "por gênero" (descoberta/exploração, e o fallback quando o artista-
+  semente está bloqueado por feedback negativo) nunca teve candidato
+  nenhum vindo daqui. Corrigido, teste novo trava a chave certa (43
+  testes no total).

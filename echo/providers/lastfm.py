@@ -129,9 +129,19 @@ class ProvedorLastfm(ProvedorMusical):
     def obter_faixas_por_tag(self, tag, limite=10):
         """Candidatos por GÊNERO (seção 6.3/6.4 - descoberta/exploração) - o
         gênero já é conhecido de antemão (é o próprio tag pedido), não precisa
-        de chamada extra de `artist.gettoptags`."""
+        de chamada extra de `artist.gettoptags`.
+
+        🔥 Achado real (2026-08-26, investigando "/caos parou de tocar depois
+        de 1 música") - `tag.gettoptracks` devolve a lista dentro de
+        `{"tracks": {"track": [...]}}`, NÃO `{"toptracks": {...}}` como
+        `artist.gettoptracks` (cada endpoint do Last.fm usa uma chave de
+        wrapper diferente, apesar do nome do método parecer igual) - com a
+        chave errada, isso SEMPRE devolveu lista vazia, silenciosamente,
+        desde que foi escrito - toda sugestão "por gênero" (descoberta/
+        exploração) do Radar E da continuação ao vivo nunca teve candidato
+        nenhum vindo daqui, só de artista favorito/chart global."""
         dados = self._get("tag.gettoptracks", tag=tag, limit=limite)
-        faixas = dados.get("toptracks", {}).get("track", [])
+        faixas = dados.get("tracks", {}).get("track", [])
         resultado = []
         for f in faixas:
             candidato = self._normalizar_faixa(f, {}, "tag")

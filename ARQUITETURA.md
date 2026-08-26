@@ -46,6 +46,25 @@ Métodos: `buscar_faixa`, `obter_faixas_do_artista`, `obter_faixas_por_tag`,
 `obter_top_faixas_usuario`, `obter_top_artistas_usuario`, `criar_playlist`,
 `adicionar_faixa_playlist`, `tocar_faixa`.
 
+### Bug real: `obter_faixas_por_tag` sempre devolveu lista vazia (2026-08-26)
+
+Investigando "usei /caos... ela tocou apenas 1 musica, n mandou mais"
+(também explicava a repetição relatada antes) - reproduzido: pedir
+continuação semeada por "Olivia Rodrigo" devolvia `{"proxima": null}`.
+Causa raiz teve DUAS camadas: (1) o usuário tinha dado 👎 numa faixa dela
+antes, o que bloqueia CORRETAMENTE o artista inteiro
+(`historico.artista_tem_feedback_negativo`) - comportamento certo; (2)
+mas o candidato de FALLBACK por gênero (`obter_faixas_por_tag`, usado
+quando o artista-semente está bloqueado) sempre devolvia lista vazia,
+silenciosamente, então não sobrava candidato nenhum pra sugerir. Causa
+raiz de (2): `tag.gettoptracks` devolve a lista dentro de `{"tracks":
+{"track": [...]}}`, mas o código lia `{"toptracks": {...}}` (a chave de
+`artist.gettoptracks`, um endpoint DIFERENTE - cada método do Last.fm
+usa um wrapper próprio, apesar do nome parecido). Bug existia desde que
+o método foi escrito - afetava TODA sugestão "por gênero" (descoberta/
+exploração) do Radar semanal E da continuação ao vivo, não só esse caso.
+Corrigido (`echo/providers/lastfm.py`), teste novo trava a chave certa.
+
 ### Por que Last.fm (não Spotify) - decisão de 2026-08-25
 
 A implementação de referência original usou o Spotify (Client Credentials, sem
