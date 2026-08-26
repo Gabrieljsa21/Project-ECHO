@@ -138,6 +138,12 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
   pra semear (`/caos` do ERIS, ver seção abaixo), mesma composição de
   candidatos do Radar semanal (chart global + artistas favoritos + gêneros
   preferidos, funciona mesmo com perfil vazio).
+- `POST /radar/feedback_ao_vivo` `{"artista", "titulo", "feedback"}` -
+  botões 👍/👎 na mensagem de "tocando agora" do Modo Música (ERIS,
+  2026-08-26). Diferente de `/radar/feedback`, não exige `track_id`
+  pré-existente (a faixa pode nunca ter passado pelo Radar) - cria a
+  entrada no histórico na hora se faltar, e resolve o gênero sozinho via
+  `provedor.resolver_generos` (o ERIS só sabe artista/título, não gênero).
 
 ## Continuação ao vivo (Modo Música do ERIS, 2026-08-25)
 

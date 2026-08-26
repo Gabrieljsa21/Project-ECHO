@@ -16,7 +16,7 @@ def test_permitir_redescoberta_apos_intervalo_configurado():
 
 def test_registrar_feedback_e_data():
     historico_mod.registrar_recomendacao("Song A", "Artista A", reason="compatibilidade", category="compatibilidade")
-    track_id = historico_mod._track_id("Song A", "Artista A")
+    track_id = historico_mod.track_id("Song A", "Artista A")
 
     entrada = historico_mod.registrar_feedback(track_id, "positivo")
     assert entrada["user_feedback"] == "positivo"
@@ -32,7 +32,7 @@ def test_feedback_em_track_inexistente_devolve_none():
 
 def test_artista_tem_feedback_negativo():
     historico_mod.registrar_recomendacao("Song A", "Artista A", reason="compatibilidade", category="compatibilidade")
-    track_id = historico_mod._track_id("Song A", "Artista A")
+    track_id = historico_mod.track_id("Song A", "Artista A")
     historico_mod.registrar_feedback(track_id, "negativo")
     assert historico_mod.artista_tem_feedback_negativo("Artista A")
     assert not historico_mod.artista_tem_feedback_negativo("Artista B")

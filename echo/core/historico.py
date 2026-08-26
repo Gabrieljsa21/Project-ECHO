@@ -11,7 +11,7 @@ ARQUIVO_HISTORICO = "data/historico_recomendacoes.json"
 DIAS_REDESCOBERTA = 90
 
 
-def _track_id(titulo, artista):
+def track_id(titulo, artista):
     return f"{artista.strip().lower()}::{titulo.strip().lower()}"
 
 
@@ -32,10 +32,10 @@ def _salvar_historico(historico):
 
 
 def foi_recomendada_recentemente(titulo, artista, dias=DIAS_REDESCOBERTA):
-    track_id = _track_id(titulo, artista)
+    id_alvo = track_id(titulo, artista)
     limite = date.today() - timedelta(days=dias)
     for entrada in carregar_historico():
-        if entrada["track_id"] == track_id and date.fromisoformat(entrada["recommended_at"]) >= limite:
+        if entrada["track_id"] == id_alvo and date.fromisoformat(entrada["recommended_at"]) >= limite:
             return True
     return False
 
@@ -43,7 +43,7 @@ def foi_recomendada_recentemente(titulo, artista, dias=DIAS_REDESCOBERTA):
 def registrar_recomendacao(titulo, artista, reason, category):
     historico = carregar_historico()
     historico.append({
-        "track_id": _track_id(titulo, artista),
+        "track_id": track_id(titulo, artista),
         "titulo": titulo,
         "artista": artista,
         "recommended_at": date.today().isoformat(),
