@@ -27,7 +27,10 @@ deliberadamente evita (seção 6.4 - Exploração).
 
 - [x] Estrutura do Modo DJ (`echo/core/`, `echo/providers/`)
 - [x] Perfil musical persistente (`data/perfil.json`)
-- [x] Cadastro manual de artistas/gêneros favoritos
+- [x] Cadastro manual de artistas/gêneros favoritos (um por um, ou em LOTE
+      colando uma playlist/lista - ver `<CADASTRAR_ARTISTAS>` no repo da GAIA)
+- [x] Importação de histórico real de escuta via Last.fm/scrobbling (opcional,
+      requer `LASTFM_USERNAME` vinculado - ver `<IMPORTAR_GOSTO_MUSICAL>`)
 - [x] Busca de lançamentos (Last.fm - chart global + gênero, sem login/assinatura)
 - [x] Radar Musical semanal (geração sob demanda - cadência real fica com o
       Agendador Diário da GAIA)

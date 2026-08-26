@@ -68,7 +68,11 @@ class _API(BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(query)
 
         if caminho == "/status":
-            self._responder_json({"provedor_configurado": obter_provedor().esta_configurado()})
+            provedor = obter_provedor()
+            self._responder_json({
+                "provedor_configurado": provedor.esta_configurado(),
+                "username_vinculado": provedor.tem_username_vinculado() if hasattr(provedor, "tem_username_vinculado") else False,
+            })
         elif caminho == "/perfil":
             self._responder_json(perfil_mod.carregar_perfil())
         elif caminho == "/radar/atual":
@@ -110,6 +114,33 @@ class _API(BaseHTTPRequestHandler):
                 self._responder_404()
             else:
                 self._responder_json(entrada)
+        elif caminho == "/perfil/importar_historico":
+            try:
+                provedor = obter_provedor()
+                limite = int(corpo.get("limite", 30))
+                artistas = provedor.obter_top_artistas_usuario(limite=limite)
+                perfil = perfil_mod.importar_favoritos_do_historico(artistas)
+                self._responder_json({"perfil": perfil, "artistas_importados": len(artistas)})
+            except ProvedorIndisponivel as e:
+                self._responder_json({"erro": str(e)}, status=503)
+        elif caminho == "/perfil/importar_artistas":
+            # 🔥 Cadastro em LOTE (2026-08-25, pedido do usuário - histórico de
+            # scrobbling dele estava vazio, então precisava de um jeito manual de
+            # colar uma lista/playlist já exportada). Reaproveita
+            # adicionar_artista_favorito (flat, mesmo peso por artista - diferente
+            # de importar_favoritos_do_historico, que pesa por RANKING real; aqui
+            # a ordem da lista colada não representa preferência relativa
+            # nenhuma, seria desonesto fingir que representa).
+            try:
+                nomes = [n.strip() for n in (corpo.get("nomes") or []) if n and n.strip()]
+                provedor = obter_provedor()
+                generos_por_nome = provedor.resolver_generos(nomes)
+                for nome in nomes:
+                    generos_artista = generos_por_nome.get(nome.lower(), [])
+                    perfil_mod.adicionar_artista_favorito(nome, genero=generos_artista[0] if generos_artista else None)
+                self._responder_json({"perfil": perfil_mod.carregar_perfil(), "artistas_importados": len(nomes)})
+            except ProvedorIndisponivel as e:
+                self._responder_json({"erro": str(e)}, status=503)
         else:
             self._responder_404()
 

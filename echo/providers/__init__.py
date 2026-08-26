@@ -51,6 +51,13 @@ class ProvedorMusical:
     def tocar_faixa(self, track_id):
         raise NotImplementedError
 
+    def resolver_generos(self, nomes_artistas):
+        """Devolve `{nome.lower(): [generos]}` pros artistas pedidos - usado pra
+        cadastro em lote de artista favorito (`core.perfil.
+        adicionar_artista_favorito` chamado por fora, ver `api_bridge.py`
+        `/perfil/importar_artistas`) sem a LLM precisar chutar gênero."""
+        raise NotImplementedError
+
 
 def obter_provedor():
     """Único provedor implementado na Fase 1 (Last.fm, sem OAuth de usuário - só
