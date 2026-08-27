@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-25 a 2026-08-27: Modo DJ completo - Radar Musical, pool por pessoa, Modo Música ao vivo (PRs #1 a #10)
+
 ### Novidades
 - **Repositório criado (Fase 1 do MVP, 2026-08-25)** - Project ECHO, Modo DJ da GAIA,
   baseado na especificação completa em `Project G.A.I.A/Project ECHO.md`. Perfil
