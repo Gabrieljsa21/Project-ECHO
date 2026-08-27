@@ -3,7 +3,11 @@
 (`BaseHTTPRequestHandler` simples, sem framework). Único consumidor: a GAIA
 (`integrations/echo_client.py`) - ela decide QUANDO gerar o Radar (Agendador Diário
 ou comando do usuário) e COMO apresentar (persona, explicação, seção 13 do
-ECHO_SPEC); aqui só o ranking determinístico e a persistência."""
+ECHO_SPEC); aqui só o ranking determinístico e a persistência.
+
+🔥 Por pessoa (2026-08-26) - toda rota agora exige `discord_user_id` (query
+pra GET, corpo pra POST) - Modo Música é social, cada pessoa tem o próprio
+perfil/pool/histórico."""
 import json
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -37,13 +41,9 @@ def _coletar_candidatos(provedor, perfil, limite_geral=40, max_artistas=10, max_
        senão essas 2 categorias ficariam só com o que sobra do chart global.
     Para na primeira falha do provedor dentro de cada loop (ex.: rate limit) e
     segue com o que já tiver coletado, em vez de derrubar o Radar inteiro.
-
-    `max_artistas`/`max_generos` (2026-08-26, achado real: `/caos` demorava
-    ~10s pra iniciar) - o Radar semanal (rodando em background) pode pagar
-    até 1+10+5=16 chamadas sequenciais ao provedor sem problema, mas
-    `/radar/semente` chama isso com o usuário esperando AO VIVO numa call -
-    reduzido pra bater com a mesma leveza de `continuacao.sugerir_proxima`
-    (no máximo 1 artista/3 gêneros na semeadura normal)."""
+    Usado só pela geração semanal do Radar (`/radar/atual`) - `/radar/semente`
+    e `/radar/proxima` consomem o pool pré-calculado, não fazem mais essa
+    coleta pesada no caminho ao vivo (ver `core/continuacao.py`)."""
     candidatos = list(provedor.obter_lancamentos_novos(limite_geral))
     for artista in perfil["favorite_artists"][:max_artistas]:
         try:
@@ -74,6 +74,7 @@ class _API(BaseHTTPRequestHandler):
     def do_GET(self):
         caminho, _, query = self.path.partition("?")
         params = urllib.parse.parse_qs(query)
+        discord_user_id = (params.get("discord_user_id") or [""])[0]
 
         if caminho == "/status":
             provedor = obter_provedor()
@@ -82,41 +83,50 @@ class _API(BaseHTTPRequestHandler):
                 "username_vinculado": provedor.tem_username_vinculado() if hasattr(provedor, "tem_username_vinculado") else False,
             })
         elif caminho == "/perfil":
-            self._responder_json(perfil_mod.carregar_perfil())
+            self._responder_json(perfil_mod.carregar_perfil(discord_user_id))
+        elif caminho == "/perfil/aprovados":
+            self._responder_json({"aprovadas": historico_mod.obter_aprovadas(discord_user_id)})
+        elif caminho == "/perfil/desaprovados":
+            self._responder_json({"desaprovadas": historico_mod.obter_desaprovadas(discord_user_id)})
+        elif caminho == "/perfil/voto":
+            titulo = (params.get("titulo") or [""])[0]
+            artista = (params.get("artista") or [""])[0]
+            self._responder_json({"voto": historico_mod.obter_voto(discord_user_id, titulo, artista)})
         elif caminho == "/radar/atual":
             forcar = (params.get("forcar") or ["0"])[0] == "1"
-            if not forcar and radar_mod.radar_ja_gerado_hoje():
-                self._responder_json({"radar": radar_mod.obter_ultimo_radar(), "novo": False})
+            if not forcar and radar_mod.radar_ja_gerado_hoje(discord_user_id):
+                self._responder_json({"radar": radar_mod.obter_ultimo_radar(discord_user_id), "novo": False})
                 return
             try:
                 provedor = obter_provedor()
-                perfil = perfil_mod.carregar_perfil()
+                perfil = perfil_mod.carregar_perfil(discord_user_id)
                 candidatos = _coletar_candidatos(provedor, perfil)
-                radar = radar_mod.gerar_radar(candidatos)
+                radar = radar_mod.gerar_radar(discord_user_id, candidatos)
                 self._responder_json({"radar": radar, "novo": True})
             except ProvedorIndisponivel as e:
                 self._responder_json({"erro": str(e), "radar": []}, status=503)
         elif caminho == "/radar/historico":
             limite = int((params.get("limite") or [20])[0])
-            self._responder_json(historico_mod.obter_historico(limite))
+            self._responder_json(historico_mod.obter_historico(discord_user_id, limite))
         else:
             self._responder_404()
 
     def do_POST(self):
         caminho = self.path
         corpo = _ler_corpo_json(self)
+        discord_user_id = corpo.get("discord_user_id", "")
 
         if caminho == "/perfil/artista_favorito":
-            self._responder_json(perfil_mod.adicionar_artista_favorito(corpo.get("nome", ""), corpo.get("genero")))
+            self._responder_json(perfil_mod.adicionar_artista_favorito(discord_user_id, corpo.get("nome", ""), corpo.get("genero")))
         elif caminho == "/perfil/artista_rejeitado":
-            self._responder_json(perfil_mod.adicionar_artista_rejeitado(corpo.get("nome", "")))
+            self._responder_json(perfil_mod.adicionar_artista_rejeitado(discord_user_id, corpo.get("nome", "")))
         elif caminho == "/perfil/genero":
-            self._responder_json(perfil_mod.definir_peso_genero(corpo.get("nome", ""), float(corpo.get("peso", 0.5))))
+            self._responder_json(perfil_mod.definir_peso_genero(discord_user_id, corpo.get("nome", ""), float(corpo.get("peso", 0.5))))
         elif caminho == "/perfil/discovery_level":
-            self._responder_json(perfil_mod.definir_discovery_level(float(corpo.get("valor", 0.5))))
+            self._responder_json(perfil_mod.definir_discovery_level(discord_user_id, float(corpo.get("valor", 0.5))))
         elif caminho == "/radar/feedback":
             entrada = feedback_mod.processar_feedback(
-                corpo.get("track_id", ""), corpo.get("feedback", ""), corpo.get("genero"),
+                discord_user_id, corpo.get("track_id", ""), corpo.get("feedback", ""), corpo.get("genero"),
             )
             if entrada is None:
                 self._responder_404()
@@ -124,13 +134,14 @@ class _API(BaseHTTPRequestHandler):
                 self._responder_json(entrada)
         elif caminho == "/radar/proxima":
             # 🔥 Continuação ao vivo (Modo Música do ERIS, 2026-08-25) - UMA
-            # sugestão semeada pela faixa tocando agora, não o lote semanal do
-            # Radar. Ver echo/core/continuacao.py.
+            # sugestão semeada pela faixa tocando agora, consumida do pool
+            # (ver core/continuacao.py) - provedor só entra se as camadas
+            # locais (pool/aprovadas) não resolverem.
             try:
                 provedor = obter_provedor()
-                perfil = perfil_mod.carregar_perfil()
                 proxima = continuacao_mod.sugerir_proxima(
-                    provedor, perfil, corpo.get("artista_atual", ""), corpo.get("titulo_atual", ""), corpo.get("excluir", []),
+                    discord_user_id, provedor, corpo.get("artista_atual", ""), corpo.get("titulo_atual", ""),
+                    corpo.get("excluir", []), corpo.get("penalidades_sessao"),
                 )
                 self._responder_json({"proxima": proxima})
             except ProvedorIndisponivel as e:
@@ -142,31 +153,39 @@ class _API(BaseHTTPRequestHandler):
             try:
                 provedor = obter_provedor()
                 entrada = feedback_mod.processar_feedback_ao_vivo(
-                    provedor, corpo.get("titulo", ""), corpo.get("artista", ""), corpo.get("feedback", ""),
+                    discord_user_id, provedor, corpo.get("titulo", ""), corpo.get("artista", ""), corpo.get("feedback", ""),
                 )
                 self._responder_json({"entrada": entrada})
             except ProvedorIndisponivel as e:
                 self._responder_json({"erro": str(e), "entrada": None}, status=503)
-        elif caminho == "/radar/semente":
-            # 🔥 Ponto de partida do `/caos` (ERIS, 2026-08-26) - sugestão SEM
-            # faixa atual pra semear (diferente de `/radar/proxima`), mesma
-            # coleta de 3 fontes do Radar semanal, mas com o teto reduzido
-            # (usuário esperando AO VIVO - ver docstring de _coletar_candidatos,
-            # achado real: essa chamada levava ~10s sem o corte).
+        elif caminho == "/radar/feedback_passivo":
+            # 🔥 Sinal fraco/acumulativo (2026-08-26) - tempo de escuta medido
+            # pelo ERIS. Provedor só entra em uso se o padrão consistente
+            # exigir resolver gênero pra ajustar peso.
             try:
                 provedor = obter_provedor()
-                perfil = perfil_mod.carregar_perfil()
-                candidatos = _coletar_candidatos(provedor, perfil, limite_geral=15, max_artistas=1, max_generos=3)
-                semente = continuacao_mod.sugerir_semente(candidatos, perfil, corpo.get("excluir", []))
-                self._responder_json({"semente": semente})
+                resultado = feedback_mod.processar_feedback_passivo(
+                    discord_user_id, provedor, corpo.get("titulo", ""), corpo.get("artista", ""),
+                    corpo.get("fracao_tocada"), bool(corpo.get("pulado")), corpo.get("momento_do_skip"),
+                )
+                self._responder_json(resultado)
             except ProvedorIndisponivel as e:
-                self._responder_json({"erro": str(e), "semente": None}, status=503)
+                self._responder_json({"erro": str(e), "ajustou_peso": False}, status=503)
+        elif caminho == "/radar/semente":
+            # 🔥 Ponto de partida do `/caos` (ERIS, 2026-08-26) - consome o pool
+            # pré-calculado (ver core/continuacao.py); provedor só entra na
+            # camada de emergência (pool/aprovadas vazios).
+            provedor = obter_provedor()
+            semente = continuacao_mod.sugerir_semente(
+                discord_user_id, provedor, corpo.get("excluir", []), corpo.get("penalidades_sessao"),
+            )
+            self._responder_json({"semente": semente})
         elif caminho == "/perfil/importar_historico":
             try:
                 provedor = obter_provedor()
                 limite = int(corpo.get("limite", 30))
                 artistas = provedor.obter_top_artistas_usuario(limite=limite)
-                perfil = perfil_mod.importar_favoritos_do_historico(artistas)
+                perfil = perfil_mod.importar_favoritos_do_historico(discord_user_id, artistas)
                 self._responder_json({"perfil": perfil, "artistas_importados": len(artistas)})
             except ProvedorIndisponivel as e:
                 self._responder_json({"erro": str(e)}, status=503)
@@ -184,8 +203,8 @@ class _API(BaseHTTPRequestHandler):
                 generos_por_nome = provedor.resolver_generos(nomes)
                 for nome in nomes:
                     generos_artista = generos_por_nome.get(nome.lower(), [])
-                    perfil_mod.adicionar_artista_favorito(nome, genero=generos_artista[0] if generos_artista else None)
-                self._responder_json({"perfil": perfil_mod.carregar_perfil(), "artistas_importados": len(nomes)})
+                    perfil_mod.adicionar_artista_favorito(discord_user_id, nome, genero=generos_artista[0] if generos_artista else None)
+                self._responder_json({"perfil": perfil_mod.carregar_perfil(discord_user_id), "artistas_importados": len(nomes)})
             except ProvedorIndisponivel as e:
                 self._responder_json({"erro": str(e)}, status=503)
         else:

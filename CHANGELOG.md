@@ -89,7 +89,68 @@ popularidade, todos passando.
   real (like e dislike na mesma faixa, segunda chamada atualiza a mesma
   entrada em vez de duplicar).
 
+- **Perfil por pessoa + pool pré-calculado + feedback fraco/forte (2026-08-26)** -
+  reescrita completa depois de investigar "eu mandei varias playlists, ela n se
+  baseia nelas como meu gosto?": o `/caos` reconstruía recomendações do zero a
+  cada chamada (rede ao vivo), amostrando só 1 artista favorito por vez. Agora:
+  - **Tudo por `discord_user_id`** (`perfil.py`/`historico.py`/`radar.py` -
+    migração one-shot do formato antigo pro dono real) - Modo Música é social,
+    feedback de qualquer visitante não pode mais mexer no perfil do dono.
+  - **Pool pessoal incremental** (`pool.py`, novo, 100-300 candidatos por
+    pessoa) - reaproveita a MESMA rodada de descoberta semanal do Radar, zero
+    chamada de rede extra; nunca recriado do zero (só funde/atualiza/remove).
+    `/radar/semente` e `/radar/proxima` (`continuacao.py`, reescrito) agora
+    consomem o pool primeiro - zero rede no caminho crítico. Fallback em
+    camadas: pool pessoal → aprovadas dessa pessoa → descoberta emergencial
+    síncrona → erro informado.
+  - **Exclusão permanente** (`historico.foi_apresentada_alguma_vez`, sem
+    janela de dias) - o `/caos` nunca repete uma faixa já apresentada pra
+    essa pessoa, diferente do dedup de 90 dias do Radar semanal.
+  - **Feedback fraco/forte** (`feedback.py`) - 👍/👎 continuam ajuste grande e
+    imediato; tempo de escuta (skip cedo/ouviu quase inteira) vira sinal
+    FRACO, só ajusta peso depois de 3 sinais consistentes seguidos pro mesmo
+    artista (log bruto de todo evento em `eventos_escuta.json`, mesmo sem
+    ajustar nada). 👎 forte também invalida do pool candidatos do mesmo
+    artista ainda não consumidos (`pool.invalidar_relacionados`).
+  - **Diversidade de sessão** - `recomendador.calcular_score`/`pool.
+    consumir_proxima` ganharam `penalidades_sessao` (penaliza artista/gênero
+    repetido demais NUMA sessão, sem esperar o dedup exato de faixa).
+  - **`/perfil/aprovados`/`/perfil/desaprovados`** (novo) e
+    `/radar/feedback_passivo` (novo) - expõem as listas curadas e o sinal
+    fraco pro ERIS. 79 testes automatizados no total, todos passando.
+- **"Musicas sem voto não saem do pool" (2026-08-26, pedido do usuário)** -
+  `pool.consumir_proxima` não remove mais a faixa do pool ao tocar (só
+  registra em `historico`, sem voto) - tocar sem avaliar não é sinal de
+  rejeição nem de aprovação. Só sai do pool quem recebe um VOTO de verdade:
+  `historico.foi_votada` (novo, substitui `foi_apresentada_alguma_vez`) e
+  `pool.remover_track` (novo, chamado por `feedback.py` em toda avaliação
+  explícita - remove só a faixa exata; `invalidar_relacionados` continua
+  removendo o artista inteiro num 👎). 85 testes automatizados no total,
+  todos passando.
+- **`GET /perfil/voto`** (2026-08-27, pedido do usuário) - `historico.
+  obter_voto` devolve `"positivo"`/`"negativo"`/`null` pra uma faixa - o
+  ERIS usa isso pra mostrar "(👍)"/"(👎)" na mensagem de "tocando agora"
+  quando ela já foi avaliada antes por quem iniciou a sessão. 87 testes
+  automatizados no total, todos passando.
+
 ### Correções
+- **`/caos` repetia a mesma música em sessões diferentes, com o pool
+  vazio (2026-08-27)** - confirmado em produção: 3 chamadas separadas de
+  `/caos` devolveram "Counting Stars - OneRepublic" toda vez. Causa raiz:
+  pool ainda com 0 candidatos (nunca gerado desde a migração), camada 2
+  (aprovadas) sempre devolvia a PRIMEIRA entrada não excluída - e como
+  cada `/caos` é sessão nova, sempre a mesma. `continuacao.
+  _aprovada_aleatoria_nao_excluida` agora sorteia entre todas as
+  elegíveis. Ver `ARQUITETURA.md`.
+- **`/caos` sempre devolvia a MESMA faixa mesmo com o pool cheio
+  (2026-08-27)** - confirmado gerando o pool real do dono ao vivo (162
+  candidatos) e chamando `/radar/semente` 6x seguidas: sempre "Duvet - bôa"
+  (a de maior afinidade). Causa raiz: `pool.consumir_proxima` parou de
+  remover a faixa escolhida do pool (mudança acima, "sem voto não sai") -
+  `max()` estrito virou determinístico demais pra sessões novas (exclusão
+  vazia). Corrigido: sorteia entre as top 5 por score em vez de sempre a
+  melhor. Validado ao vivo depois da correção: 3 faixas diferentes em 6
+  chamadas.
 - **`/radar/semente` demorando ~10s pra responder** (2026-08-26, "Caos esta
   demorando para iniciar") - usava os mesmos limites do Radar semanal (até
   16 chamadas sequenciais ao provedor), mas bloqueia uma interação AO VIVO

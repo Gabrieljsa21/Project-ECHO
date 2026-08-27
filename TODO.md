@@ -7,14 +7,6 @@ credencial real do usuário. Ver `CHANGELOG.md` pro detalhe completo.
 
 ## Prioridade média (Fase 2 do ECHO_SPEC)
 
-- **Peso comportamental de verdade** (seção 5.2 do ECHO_SPEC) - o histórico
-  real de reprodução JÁ é lido (`obter_reproduzidas_recentemente`/
-  `obter_top_faixas_usuario`/`obter_top_artistas_usuario`, requer
-  `LASTFM_USERNAME` vinculado, implementado em 2026-08-25), mas só é usado pra
-  SEED inicial do perfil (`importar_favoritos_do_historico`) - falta usar
-  escuta CONTÍNUA (não só um snapshot importado uma vez) pra ajustar peso ao
-  longo do tempo, distinguindo reprodução completa de pulada rápido. Status:
-  não iniciado.
 - **Nível de descoberta influenciando o ranking de verdade** (hoje
   `discovery_level` só persiste no perfil, `core/recomendador.py` ainda não lê esse
   valor pra alterar os pesos) - Complexidade: baixa. Status: não iniciado.

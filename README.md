@@ -43,6 +43,12 @@ deliberadamente evita (seção 6.4 - Exploração).
 - [x] Continuação ao vivo (`POST /radar/proxima`) - uma sugestão por vez,
       semeada pela faixa que está tocando agora numa call real (Modo Música
       do ERIS), com dedup de sessão
+- [x] Perfil/pool/histórico por pessoa (`discord_user_id`) - Modo Música é
+      social, cada pessoa do Discord tem seu próprio gosto/feedback
+- [x] Pool pessoal pré-calculado (100-300 por pessoa, incremental, nunca
+      recriado do zero) - `/caos`/continuação ao vivo sem chamada de rede
+- [x] Feedback fraco/acumulativo (tempo de escuta) além do forte (👍/👎) -
+      ajusta peso só depois de um padrão consistente
 
 Fase 2 (peso comportamental contínuo, Em Alta, Redescobertas, nível de
 descoberta configurável) e Fase 3 (playlists gerenciadas, múltiplos

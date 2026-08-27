@@ -19,23 +19,61 @@ cadência semanal.
 
 ## Separação de responsabilidades (`echo/core/`)
 
-- **`perfil.py`** - gerencia preferências e pesos (`data/perfil.json`). Cadastro é
-  manual nesta fase (artistas/gêneros favoritos e rejeitados, nível de descoberta) -
-  sem histórico de reprodução real ainda (Fase 2).
+🔥 **Tudo por pessoa desde 2026-08-26** (`discord_user_id` como primeiro
+parâmetro em praticamente toda função) - Modo Música é social (qualquer
+membro do servidor pode tocar/avaliar), então perfil/pool/histórico não
+podem mais ser um documento único. Migração one-shot do formato antigo
+(perfil único, sem chave de pessoa) pro `discord_user_id` real do dono
+acontece sozinha na primeira carga depois do deploy (`DONO_DISCORD_ID_
+MIGRACAO` em `perfil.py`, reaproveitado por `historico.py`/`radar.py`).
+
+- **`perfil.py`** - gerencia preferências e pesos por pessoa (`data/perfil.json`,
+  `{discord_user_id: {...}}`). Cadastro é manual nesta fase (artistas/gêneros
+  favoritos e rejeitados, nível de descoberta) - sem histórico de reprodução
+  real ainda (Fase 2, exceto import via Last.fm/lote, ver seção própria abaixo).
 - **`recomendador.py`** - calcula candidatos e ranking. Score determinístico:
   `compatibilidade*0.50 + relevância*0.25 + descoberta*0.15 + exploração*0.10`
   (seção 6/19 do ECHO_SPEC), com exclusão total (score negativo) pra repetição
-  recente e artista rejeitado/com feedback negativo.
+  recente e artista rejeitado/com feedback negativo. `calcular_score`/`ranquear`
+  aceitam `penalidades_sessao` opcional (dict `"artista::nome"`/`"genero::nome"`
+  -> contagem) - reduz score de quem já apareceu demais NUMA sessão contínua do
+  Modo Música, sem esperar o dedup exato de faixa (evita "sempre o mesmo
+  artista 3x seguidas" mesmo quando cada faixa em si é diferente).
 - **`radar.py`** - gera a seleção semanal: aplica a composição padrão (5
   compatibilidade / 3 relevância / 2 descoberta / 1 exploração pra 10 músicas, seção
   7.3) com diversidade (máx. 1 faixa por artista) e um preenchimento em RODÍZIO entre
   categorias quando alguma fica sem candidato suficiente - nunca um top-up genérico
   por score puro, que deixaria a categoria de maior peso (compatibilidade) engolir
-  sozinha toda folga das demais.
-- **`feedback.py`** - processa 👍/👎: ajuste pequeno e incremental de peso de gênero
-  (nunca substitui o perfil, seção 21), delegado pra `perfil.ajustar_peso_genero`.
+  sozinha toda folga das demais. Depois de selecionar a edição da semana, chama
+  `pool.gerar_pool_incremental` com a lista RANQUEADA completa (antes da
+  curadoria de diversidade) - reaproveita a mesma rodada de descoberta pro pool
+  do `/caos`, zero chamada de rede extra.
+- **`pool.py`** (novo, 2026-08-26) - reservatório pessoal maior (100-300
+  candidatos, `TAMANHO_ALVO`) que o `/caos`/continuação consomem AO VIVO sem
+  rede, ver seção dedicada abaixo.
+- **`feedback.py`** - dois níveis BEM diferentes de sinal (pedido do usuário:
+  "👍/👎 representam sinais fortes e permanentes... pular cedo, ouvir até o
+  final são sinais fracos e acumulativos"):
+  - **Forte** (`processar_feedback`/`processar_feedback_ao_vivo`, 👍/👎
+    explícito) - ajuste maior de peso de gênero (`AJUSTE_POSITIVO=0.08`/
+    `AJUSTE_NEGATIVO=-0.12`), aplicado na hora, delegado pra `perfil.
+    ajustar_peso_genero`. Um 👎 também chama `pool.invalidar_relacionados`
+    - remove do pool candidatos do MESMO artista ainda não consumidos, sem
+    esperar a próxima rodada semanal de descoberta.
+  - **Fraco** (`processar_feedback_passivo`, tempo de escuta medido pelo
+    ERIS) - um evento isolado NUNCA ajusta peso sozinho; só depois de
+    `MINIMO_EVENTOS_FRACOS_PARA_AJUSTAR=3` sinais consistentes na mesma
+    direção pro mesmo artista (`historico.contar_eventos_fracos_recentes`)
+    é que vira um ajuste PEQUENO (`AJUSTE_PASSIVO_POSITIVO=0.03`/
+    `AJUSTE_PASSIVO_NEGATIVO=-0.03`). Todo evento é logado bruto
+    (`historico.registrar_evento_escuta`) mesmo quando não ajusta nada -
+    dado guardado pra refinar o algoritmo depois sem ter perdido histórico.
 - **`historico.py`** - evita repetição (seção 8) e registra feedback; redescoberta
-  permitida só após `DIAS_REDESCOBERTA` (90 dias, seção 9).
+  do Radar semanal permitida só após `DIAS_REDESCOBERTA` (90 dias, seção 9). Ganhou
+  `foi_apresentada_alguma_vez` (SEM janela de dias - exclusão PERMANENTE, usada só
+  pelo pool) e `obter_aprovadas`/`obter_desaprovadas` (dedup pela aparição mais
+  recente de cada faixa). Log separado de eventos passivos em `eventos_escuta.json`.
+- **`continuacao.py`** - ver seção "Continuação ao vivo" abaixo.
 
 ## Provedor musical (`echo/providers/`)
 
@@ -130,8 +168,20 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
 
 ## Contrato HTTP (porta 8774, `echo/api_bridge.py`)
 
-- `GET /status` - `{"provedor_configurado": bool, "username_vinculado": bool}`.
-- `GET /perfil` - perfil musical completo.
+🔥 Toda rota exige `discord_user_id` (query pra GET, corpo pra POST) desde
+2026-08-26 - omitido abaixo por brevidade em toda rota, exceto onde o
+formato do parâmetro importa.
+
+- `GET /status` - `{"provedor_configurado": bool, "username_vinculado": bool}`
+  (única rota que NÃO exige `discord_user_id` - não é específica de pessoa).
+- `GET /perfil` - perfil musical completo dessa pessoa.
+- `GET /perfil/aprovados` / `GET /perfil/desaprovados` (novo, 2026-08-26) -
+  `{"aprovadas": [...]}`/`{"desaprovadas": [...]}`, lista curada por
+  feedback explícito (`/musica aprovadas`/`/musica desaprovadas` do ERIS).
+- `GET /perfil/voto?titulo=&artista=` (novo, 2026-08-27) -
+  `{"voto": "positivo"|"negativo"|null}` - se essa faixa já foi avaliada
+  antes por essa pessoa (`historico.obter_voto`). Usado pelo ERIS pra
+  mostrar "(👍)"/"(👎)" na mensagem de "tocando agora".
 - `POST /perfil/artista_favorito` `{"nome", "genero"}` - também remove de
   rejeitados se estava lá.
 - `POST /perfil/artista_rejeitado` `{"nome"}`.
@@ -140,8 +190,9 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
 - `POST /perfil/discovery_level` `{"valor"}` (0.0-1.0).
 - `GET /radar/atual?forcar=0|1` - devolve o último Radar já gerado hoje (a menos que
   `forcar=1`); gera um novo coletando chart global + faixas dos artistas favoritos +
-  faixas por gênero preferido. 503 com `{"erro", "radar": []}` se o provedor não
-  estiver disponível.
+  faixas por gênero preferido, e alimenta o pool incremental dessa pessoa
+  (`pool.gerar_pool_incremental`). 503 com `{"erro", "radar": []}` se o provedor
+  não estiver disponível.
 - `GET /radar/historico?limite=N` - últimas N recomendações (mais recente primeiro).
 - `POST /perfil/importar_historico` `{"limite"}` - seed do perfil a partir do
   histórico real de escuta (`LASTFM_USERNAME` obrigatório). 503 se não vinculado.
@@ -150,19 +201,71 @@ provedor não retornar informação confiável"). Sem credencial configurada, `G
 - `POST /radar/feedback` `{"track_id", "feedback", "genero"}` - `feedback` é
   `"positivo"` ou `"negativo"`; `genero` vem de quem está mandando (a GAIA reenvia o
   que recebeu junto com a faixa no Radar).
-- `POST /radar/proxima` `{"artista_atual", "titulo_atual", "excluir"}` -
-  continuação ao vivo (ver seção abaixo). `excluir`: lista de "artista::titulo"
-  já tocados na sessão atual.
-- `POST /radar/semente` `{"excluir"}` - sugestão de PARTIDA sem faixa atual
-  pra semear (`/caos` do ERIS, ver seção abaixo), mesma composição de
-  candidatos do Radar semanal (chart global + artistas favoritos + gêneros
-  preferidos, funciona mesmo com perfil vazio).
+- `POST /radar/proxima` `{"artista_atual", "titulo_atual", "excluir", "penalidades_sessao"}`
+  - continuação ao vivo (ver seção abaixo). `excluir`: lista de
+  "artista::titulo" já tocados na sessão atual. `penalidades_sessao` (opcional):
+  dict de diversidade, ver `recomendador.py` acima.
+- `POST /radar/semente` `{"excluir", "penalidades_sessao"}` - sugestão de
+  PARTIDA sem faixa atual pra semear (`/caos` do ERIS, ver seção abaixo).
 - `POST /radar/feedback_ao_vivo` `{"artista", "titulo", "feedback"}` -
   botões 👍/👎 na mensagem de "tocando agora" do Modo Música (ERIS,
   2026-08-26). Diferente de `/radar/feedback`, não exige `track_id`
   pré-existente (a faixa pode nunca ter passado pelo Radar) - cria a
   entrada no histórico na hora se faltar, e resolve o gênero sozinho via
   `provedor.resolver_generos` (o ERIS só sabe artista/título, não gênero).
+  Um `feedback="negativo"` também chama `pool.invalidar_relacionados`.
+- `POST /radar/feedback_passivo` `{"artista", "titulo", "fracao_tocada",
+  "pulado", "momento_do_skip"}` (novo, 2026-08-26) - sinal fraco medido pelo
+  ERIS (tempo de escuta). Devolve `{"ajustou_peso": bool, "negativo": bool}`
+  - a maioria das chamadas não ajusta nada (evento isolado), só devolve
+  `True` depois de um padrão consistente (ver `feedback.py` acima).
+
+## Pool pessoal pré-calculado (`pool.py`, 2026-08-26)
+
+Pedido do usuário, investigando "eu mandei varias playlists, ela n se
+baseia nelas como meu gosto?": "prefiro pré-calcular o repertório do que
+reconstruir recomendações toda vez que o comando é executado". Diferente do
+Radar semanal (lote FECHADO de 10 músicas curadas com diversidade pra 1
+edição), o pool é um reservatório MAIOR (100-300 por pessoa, `TAMANHO_ALVO`)
+que `/radar/semente`/`/radar/proxima` consomem AO VIVO - **zero chamada de
+rede no caminho crítico** entre uma faixa acabar e a próxima começar.
+
+- **Nunca recriado do zero** (pedido explícito do usuário) -
+  `gerar_pool_incremental` funde com o pool existente: atualiza score de quem
+  já estava lá, adiciona os novos, remove quem já foi VOTADA
+  (`historico.foi_votada`) ou não coube no `TAMANHO_ALVO` (mantém só os de
+  maior afinidade).
+- **Reaproveita a descoberta semanal do Radar** - `radar.gerar_radar` chama
+  `gerar_pool_incremental` logo depois de ranquear, com a lista COMPLETA
+  (antes da curadoria de diversidade da edição fechada) - o pool nunca
+  dispara sozinho uma busca no provedor; quem varre o Last.fm continua
+  sendo só o Radar (1x/semana) ou a descoberta de emergência abaixo
+  (fallback raro).
+- **Cada candidato guarda por que foi recomendado** (`origem`, `artista_
+  semente`, `afinidade`, `descoberto_em`) - explicabilidade/depuração.
+- `consumir_proxima` - SORTEIA entre as `TAMANHO_TOPO_SORTEIO` (5) de maior
+  score (`afinidade + boost de proximidade da semente - penalidade de
+  diversidade de sessão`) e registra em `historico` (reason="pool", sem
+  voto ainda) - alimenta o dedup de 90 dias do Radar semanal. 🔥 **NÃO
+  remove do pool** (2026-08-26, pedido do usuário: "Musicas sem voto não
+  saem do pool") - tocar sem avaliar não é sinal de rejeição nem de
+  aprovação; dedup de CURTO prazo (não repetir na mesma sessão) já é
+  resolvido por `excluidos_sessao`, de quem chama. 🔥 **Sorteio, não
+  `max()` estrito** (2026-08-27, achado real em produção: com o pool
+  cheio, `/caos` em sessões NOVAS - exclusão vazia - sempre devolvia a
+  MESMA faixa de maior afinidade, já que ela nunca sai do pool sozinha) -
+  `random.choice` entre o topo preserva "prefere afinidade alta" sem virar
+  sempre a mesma escolha.
+- `remover_track` - sai do pool assim que a faixa EXATA recebe um voto
+  (👍 ou 👎, chamado por `feedback.py` em toda avaliação explícita) -
+  diferente de `invalidar_relacionados` abaixo, não mexe em mais nada do
+  mesmo artista.
+- `invalidar_relacionados` - chamado num 👎 forte (`feedback.py`), remove do
+  pool candidatos do MESMO artista ainda não consumidos (a faixa que
+  recebeu o 👎 sai também, por coincidir com o próprio artista). Deliberadamente
+  NÃO filtra por gênero também - tags reais do Last.fm são amplas demais
+  (ex.: "rock"/"pop") e derrubariam o pool inteiro por engano num único
+  dislike.
 
 ## Continuação ao vivo (Modo Música do ERIS, 2026-08-25)
 
@@ -174,44 +277,57 @@ numa call de verdade (quem toca é o [Project ERIS](../../Project-ERIS) -
 o ECHO nunca sabe o que é YouTube/Discord, só devolve `{"artista",
 "titulo"}`).
 
-Trata o artista/gêneros da faixa atual como preferência FORTE só pra essa
-sugestão (perfil efetivo, cópia em memória, nunca persistida) - mesmo que o
-artista ainda não esteja cadastrado como favorito no perfil de longo prazo,
-já que "a mesma vibe" precisa reagir ao pedido imediato do usuário, não só
-ao histórico salvo. Dedup de sessão (`excluir`) é responsabilidade de quem
-chama (o ERIS mantém a lista do que já tocou nesta call) - o `core.
-recomendador.ranquear` ainda aplica o dedup de 90 dias do Radar semanal por
-baixo, como segunda camada.
+🔥 **Reescrito (2026-08-26) pro pool pré-calculado** - fallback em camadas
+(pedido do usuário): **pool pessoal → aprovadas dessa pessoa → descoberta
+emergencial síncrona (rede, só quando as duas primeiras falharem) → None**.
+As camadas 1/2 não fazem chamada de rede nenhuma; a camada 3 (`sugerir_
+proxima`) trata o artista/gêneros da faixa atual como preferência FORTE só
+pra essa sugestão (perfil efetivo, cópia em memória, nunca persistida) -
+mesmo raciocínio de antes, agora só acionado como último recurso.
 
 **`/caos` do ERIS (2026-08-26)** - pedido do usuário: "ERIS entra no canal
 de voz do usuário e inicia uma sessão musical contínua... sem exigir
-artista, gênero, música ou qualquer outra referência inicial". Sem faixa
-atual pra semear, `echo/core/continuacao.py::sugerir_semente` ranqueia
-direto os candidatos que o CHAMADOR já coletou (mesma composição de 3
-fontes de `api_bridge.py::_coletar_candidatos` usada pelo Radar semanal -
-chart global + artistas favoritos + gêneros preferidos), sem boost
-artificial de perfil (não há pedido explícito pra reforçar, diferente da
-continuação). Funciona mesmo com perfil TOTALMENTE vazio - o chart global
-sozinho já supre candidato via relevância/exploração.
+artista, gênero, música ou qualquer outra referência inicial".
+`sugerir_semente` segue a mesma cadeia de camadas (pool → aprovadas →
+`obter_lancamentos_novos` como único fallback de emergência, sem boost
+artificial de perfil). Funciona mesmo com perfil TOTALMENTE vazio - o
+chart global sozinho já supre candidato via relevância/exploração na
+camada 3, e o pool geralmente resolve sozinho depois da 1ª rodada semanal.
 
-**Latência reduzida (2026-08-26, achado real: "Caos esta demorando para
-iniciar")** - `/radar/semente` chamava `_coletar_candidatos` com os MESMOS
-limites do Radar semanal (até 1 chart + 10 artistas + 5 gêneros = até 16
-chamadas sequenciais ao provedor), mas essa rota bloqueia uma interação AO
-VIVO do Discord, diferente do Radar (roda em background). Medido: ~9.8s
-antes, a maior parte (~4.3s) em `obter_lancamentos_novos` resolvendo
-gênero de CADA artista único do chart (até 40, `_resolver_generos_por_
-artista`). Reduzido só nesta rota (`max_artistas=1, max_generos=3,
-limite_geral=15`, mesma ordem de grandeza de `continuacao.sugerir_proxima`)
-- ~4.5s medido depois. `_coletar_candidatos` ganhou os parâmetros
-`max_artistas`/`max_generos` pra isso, sem afetar o Radar semanal
-(continua chamando sem eles, valores padrão 10/5 preservados).
+### Bug real: `/caos` repetia a mesma música em sessões diferentes, com o pool vazio (2026-08-27)
+
+Confirmado em produção: `/caos` chamado 3x seguidas (3 sessões separadas)
+devolveu "Counting Stars - OneRepublic" como semente TODA vez. Causa raiz:
+o pool pessoal do dono ainda estava com **0 candidatos** (nunca gerado
+desde a migração pro formato por pessoa - só populado por uma rodada do
+Radar semanal ou `forcar=1`), então a camada 1 sempre falhava e caía pra
+camada 2 (aprovadas). `_primeira_aprovada_nao_excluida` (antigo nome)
+sempre devolvia a PRIMEIRA entrada não excluída da lista - como cada
+`/caos` é uma sessão NOVA (exclusão de sessão reseta), e "Counting Stars"
+era a primeira faixa aprovada em ordem de inserção no histórico, ela
+vencia sempre. Renomeada pra `_aprovada_aleatoria_nao_excluida` -
+`random.choice` entre TODAS as elegíveis, não só a primeira. O problema
+de fundo (pool vazio) se resolve sozinho assim que o Radar rodar 1x pro
+dono; o sorteio é só pra a camada de emergência não parecer travada
+enquanto isso não acontece.
+
+**Latência (2026-08-26, achado real: "Caos esta demorando para iniciar")**
+- antes desta reescrita, `/radar/semente` chamava `_coletar_candidatos` com
+até 16 chamadas sequenciais ao provedor (~9.8s), bloqueando uma interação
+AO VIVO do Discord. Com o pool, o caminho NORMAL não faz rede nenhuma -
+praticamente instantâneo; só a camada 3 (rara) ainda paga esse custo,
+reduzido separadamente (`max_artistas=1, max_generos=3, limite_geral=15`
+dentro de `continuacao.py`, não mais em `api_bridge.py::_coletar_
+candidatos`, que agora só serve o Radar semanal).
 
 ## Persistência (`data/`, gitignored)
 
-`perfil.json`, `historico_recomendacoes.json`, `radar_estado.json` - lidos do disco a
-cada chamada (nunca cacheados em memória entre requests), mesmo padrão já usado no
-HESTIA/MOIRAI depois do bug real de cache stale documentado lá
+`perfil.json`, `historico_recomendacoes.json`, `eventos_escuta.json`,
+`radar_estado.json`, `pool_musical.json` - todos no formato `{discord_user_id:
+{...}}` desde 2026-08-26 (migração one-shot do formato antigo na primeira
+carga, ver `DONO_DISCORD_ID_MIGRACAO`). Lidos do disco a cada chamada (nunca
+cacheados em memória entre requests), mesmo padrão já usado no HESTIA/MOIRAI
+depois do bug real de cache stale documentado lá
 (`Project G.A.I.A/assistant/docs/CORRECOES.md`).
 
 ## O que fica pendente pra Fase 2/3 (ver `TODO.md`)
