@@ -135,6 +135,18 @@ popularidade, todos passando.
   quando ela já foi avaliada antes por quem iniciou a sessão. 87 testes
   automatizados no total, todos passando.
 
+### Alterado
+- **Um 👎 numa faixa não bloqueia mais o artista inteiro (2026-08-27)** -
+  pedido do usuário: "um 👎 em 1 musica n pode condenar todas desse
+  artista. Assim como o like n aprova todas tbm, algumas eu gosto e
+  outras nao". `historico.artista_tem_feedback_negativo` (excluía o
+  artista do ranking pra sempre) e `pool.invalidar_relacionados` (removia
+  o artista inteiro do pool) foram REMOVIDOS - todo voto (👍/👎) agora
+  fica estritamente na faixa exata (`pool.remover_track`). O único jeito
+  de rejeitar um artista inteiro continua sendo a ação explícita
+  `perfil.adicionar_artista_rejeitado` (`disliked_artists`), nunca
+  inferido de uma avaliação de uma única música.
+
 ### Correções
 - **`/caos` repetia a mesma música em sessões diferentes, com o pool
   vazio (2026-08-27)** - confirmado em produção: 3 chamadas separadas de

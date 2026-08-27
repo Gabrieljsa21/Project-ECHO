@@ -32,8 +32,9 @@ def processar_feedback(discord_user_id, track_id, feedback, genero=None):
 
     Todo voto (positivo OU negativo) tira a faixa exata do pool
     (`pool.remover_track`, 2026-08-26) - só quem NUNCA foi avaliado
-    continua lá ("Musicas sem voto não saem do pool"). Um 👎 também
-    invalida o resto do mesmo artista ainda não consumido."""
+    continua lá ("Musicas sem voto não saem do pool"). 🔥 Só a faixa exata,
+    nunca o artista inteiro (2026-08-27, pedido do usuário: "um 👎 em 1
+    musica n pode condenar todas desse artista")."""
     entrada = historico_mod.registrar_feedback(discord_user_id, track_id, feedback)
     if entrada is None:
         return None
@@ -45,8 +46,6 @@ def processar_feedback(discord_user_id, track_id, feedback, genero=None):
         perfil_mod.salvar_perfil(discord_user_id, perfil)
 
     pool_mod.remover_track(discord_user_id, entrada["titulo"], entrada["artista"])
-    if feedback == "negativo":
-        pool_mod.invalidar_relacionados(discord_user_id, entrada["artista"])
 
     return entrada
 
@@ -62,10 +61,10 @@ def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedb
     artista/título) - resolvido aqui mesmo via provedor.
 
     Todo voto tira a faixa exata do pool (`pool.remover_track`,
-    2026-08-26 - "Musicas sem voto não saem do pool"); um 👎 também invalida
-    candidatos do MESMO artista ainda não consumidos no pool
-    (`pool.invalidar_relacionados`) - não espera a próxima rodada semanal
-    de descoberta pra parar de considerar esse artista."""
+    2026-08-26 - "Musicas sem voto não saem do pool"). 🔥 Só a faixa exata,
+    nunca o artista inteiro (2026-08-27, pedido do usuário: "um 👎 em 1
+    musica n pode condenar todas desse artista. Assim como o like n aprova
+    todas tbm, algumas eu gosto e outras nao")."""
     track_id = historico_mod.track_id(titulo, artista)
     entrada = historico_mod.registrar_feedback(discord_user_id, track_id, feedback)
     if entrada is None:
@@ -83,8 +82,6 @@ def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedb
         perfil_mod.salvar_perfil(discord_user_id, perfil)
 
     pool_mod.remover_track(discord_user_id, titulo, artista)
-    if feedback == "negativo":
-        pool_mod.invalidar_relacionados(discord_user_id, artista)
 
     return entrada
 

@@ -95,13 +95,19 @@ def test_feedback_ao_vivo_isolado_por_pessoa():
     assert historico_mod.obter_historico(outro_usuario) == []
 
 
-def test_feedback_ao_vivo_negativo_invalida_pool_do_mesmo_artista():
-    pool_mod.gerar_pool_incremental(USUARIO, [_candidato_ranqueado("Rhymes Like Dimes", "MF DOOM", ["boom bap"], 0.7)])
-    assert len(pool_mod.carregar_pool(USUARIO)) == 1
-
+def test_feedback_ao_vivo_negativo_remove_so_a_faixa_exata_do_pool():
+    """Pedido do usuário 2026-08-27: "um 👎 em 1 musica n pode condenar
+    todas desse artista. Assim como o like n aprova todas tbm, algumas eu
+    gosto e outras nao" - negativo é simétrico ao positivo, só a faixa
+    exata sai, o resto do mesmo artista fica no pool."""
+    pool_mod.gerar_pool_incremental(USUARIO, [
+        _candidato_ranqueado("Doomsday", "MF DOOM", ["boom bap"], 0.7),
+        _candidato_ranqueado("Rhymes Like Dimes", "MF DOOM", ["boom bap"], 0.6),
+    ])
     feedback_mod.processar_feedback_ao_vivo(USUARIO, _ProvedorFalso(), "Doomsday", "MF DOOM", "negativo")
 
-    assert pool_mod.carregar_pool(USUARIO) == []
+    pool = pool_mod.carregar_pool(USUARIO)
+    assert {c["titulo"] for c in pool} == {"Rhymes Like Dimes"}
 
 
 def test_feedback_ao_vivo_positivo_remove_so_a_faixa_exata_do_pool():

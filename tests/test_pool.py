@@ -162,17 +162,6 @@ def test_remover_track_de_faixa_ausente_nao_quebra():
     assert len(pool_mod.carregar_pool(USUARIO)) == 1
 
 
-def test_invalidar_relacionados_remove_apenas_mesmo_artista():
-    pool_mod.gerar_pool_incremental(USUARIO, [
-        _candidato("Song A", "Artista A", ["pop"], 0.7),
-        _candidato("Song B", "Artista A", ["pop"], 0.6),
-        _candidato("Song C", "Artista B", ["pop"], 0.5),
-    ])
-    pool_mod.invalidar_relacionados(USUARIO, "Artista A")
-    pool = pool_mod.carregar_pool(USUARIO)
-    assert {c["titulo"] for c in pool} == {"Song C"}
-
-
 def test_pool_vazio_ou_velho_true_quando_nunca_gerado():
     assert pool_mod.pool_vazio_ou_velho(USUARIO) is True
 

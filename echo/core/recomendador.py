@@ -85,11 +85,21 @@ def _penalidade_diversidade_sessao(candidato, penalidades_sessao):
 
 def calcular_score(discord_user_id, candidato, perfil, penalidades_sessao=None):
     """Devolve (score_total, categoria_dominante). Categoria é None quando o
-    candidato é excluído de vez (repetição recente ou artista já rejeitado/feedback
-    negativo) - não é "menos preferido", é redundante ou indesejado."""
+    candidato é excluído de vez (repetição recente ou artista explicitamente
+    rejeitado pelo usuário) - significa redundante ou indesejado, mais forte
+    do que só "menos preferido".
+
+    🔥 Um 👎 numa FAIXA nunca bloqueia o ARTISTA inteiro (2026-08-27, pedido
+    do usuário: "um 👎 em 1 musica n pode condenar todas desse artista.
+    Assim como o like n aprova todas tbm, algumas eu gosto e outras nao") -
+    só `_artista_rejeitado` (rejeição EXPLÍCITA e deliberada via `perfil.
+    adicionar_artista_rejeitado`, ação separada de avaliar uma faixa) exclui
+    o artista inteiro. Feedback de faixa (👍/👎) fica só na faixa exata
+    (`pool.remover_track`) + um nudge pequeno e incremental no peso do
+    gênero - nunca um bloqueio binário do artista."""
     if historico_mod.foi_recomendada_recentemente(discord_user_id, candidato["titulo"], candidato["artista"]):
         return -1.0, None
-    if _artista_rejeitado(candidato, perfil) or historico_mod.artista_tem_feedback_negativo(discord_user_id, candidato["artista"]):
+    if _artista_rejeitado(candidato, perfil):
         return -1.0, None
 
     componentes = {

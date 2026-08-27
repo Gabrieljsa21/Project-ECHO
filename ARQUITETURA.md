@@ -34,7 +34,10 @@ MIGRACAO` em `perfil.py`, reaproveitado por `historico.py`/`radar.py`).
 - **`recomendador.py`** - calcula candidatos e ranking. Score determinístico:
   `compatibilidade*0.50 + relevância*0.25 + descoberta*0.15 + exploração*0.10`
   (seção 6/19 do ECHO_SPEC), com exclusão total (score negativo) pra repetição
-  recente e artista rejeitado/com feedback negativo. `calcular_score`/`ranquear`
+  recente e artista EXPLICITAMENTE rejeitado (`disliked_artists`, ação
+  deliberada - 🔥 desde 2026-08-27, um 👎 numa faixa avulsa NUNCA bloqueia o
+  artista inteiro, ver "Pool pessoal pré-calculado" abaixo).
+  `calcular_score`/`ranquear`
   aceitam `penalidades_sessao` opcional (dict `"artista::nome"`/`"genero::nome"`
   -> contagem) - reduz score de quem já apareceu demais NUMA sessão contínua do
   Modo Música, sem esperar o dedup exato de faixa (evita "sempre o mesmo
@@ -57,9 +60,12 @@ MIGRACAO` em `perfil.py`, reaproveitado por `historico.py`/`radar.py`).
   - **Forte** (`processar_feedback`/`processar_feedback_ao_vivo`, 👍/👎
     explícito) - ajuste maior de peso de gênero (`AJUSTE_POSITIVO=0.08`/
     `AJUSTE_NEGATIVO=-0.12`), aplicado na hora, delegado pra `perfil.
-    ajustar_peso_genero`. Um 👎 também chama `pool.invalidar_relacionados`
-    - remove do pool candidatos do MESMO artista ainda não consumidos, sem
-    esperar a próxima rodada semanal de descoberta.
+    ajustar_peso_genero`. Sempre chama `pool.remover_track` (só a faixa
+    EXATA, nunca o artista inteiro - 2026-08-27, pedido do usuário: "um 👎
+    em 1 musica n pode condenar todas desse artista. Assim como o like n
+    aprova todas tbm, algumas eu gosto e outras nao"; `pool.
+    invalidar_relacionados`, que removia o artista inteiro num 👎, foi
+    removido por esse mesmo motivo).
   - **Fraco** (`processar_feedback_passivo`, tempo de escuta medido pelo
     ERIS) - um evento isolado NUNCA ajusta peso sozinho; só depois de
     `MINIMO_EVENTOS_FRACOS_PARA_AJUSTAR=3` sinais consistentes na mesma
@@ -213,7 +219,8 @@ formato do parâmetro importa.
   pré-existente (a faixa pode nunca ter passado pelo Radar) - cria a
   entrada no histórico na hora se faltar, e resolve o gênero sozinho via
   `provedor.resolver_generos` (o ERIS só sabe artista/título, não gênero).
-  Um `feedback="negativo"` também chama `pool.invalidar_relacionados`.
+  Sempre tira a faixa exata do pool (`pool.remover_track`), nunca o
+  artista inteiro.
 - `POST /radar/feedback_passivo` `{"artista", "titulo", "fracao_tocada",
   "pulado", "momento_do_skip"}` (novo, 2026-08-26) - sinal fraco medido pelo
   ERIS (tempo de escuta). Devolve `{"ajustou_peso": bool, "negativo": bool}`
@@ -257,15 +264,17 @@ rede no caminho crítico** entre uma faixa acabar e a próxima começar.
   `random.choice` entre o topo preserva "prefere afinidade alta" sem virar
   sempre a mesma escolha.
 - `remover_track` - sai do pool assim que a faixa EXATA recebe um voto
-  (👍 ou 👎, chamado por `feedback.py` em toda avaliação explícita) -
-  diferente de `invalidar_relacionados` abaixo, não mexe em mais nada do
-  mesmo artista.
-- `invalidar_relacionados` - chamado num 👎 forte (`feedback.py`), remove do
-  pool candidatos do MESMO artista ainda não consumidos (a faixa que
-  recebeu o 👎 sai também, por coincidir com o próprio artista). Deliberadamente
-  NÃO filtra por gênero também - tags reais do Last.fm são amplas demais
-  (ex.: "rock"/"pop") e derrubariam o pool inteiro por engano num único
-  dislike.
+  (👍 ou 👎, chamado por `feedback.py` em toda avaliação explícita) - só
+  ELA, nunca mexe em mais nada do mesmo artista. 🔥 **`invalidar_
+  relacionados` removido (2026-08-27)** - existia até então pra remover
+  TODO o artista do pool num 👎, mas o usuário apontou que isso "condena"
+  faixas do mesmo artista que ele nunca ouviu/avaliou: "um 👎 em 1 musica
+  n pode condenar todas desse artista. Assim como o like n aprova todas
+  tbm, algumas eu gosto e outras nao". Voto (qualquer direção) agora fica
+  estritamente por FAIXA - o único jeito de rejeitar um artista inteiro é
+  a ação explícita e deliberada `perfil.adicionar_artista_rejeitado`
+  (`disliked_artists`, seção "Contrato HTTP"), nunca inferido de um voto
+  numa única música.
 
 ## Continuação ao vivo (Modo Música do ERIS, 2026-08-25)
 

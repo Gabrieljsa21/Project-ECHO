@@ -129,14 +129,6 @@ def obter_voto(discord_user_id, titulo, artista):
     return entrada.get("user_feedback") if entrada else None
 
 
-def artista_tem_feedback_negativo(discord_user_id, artista):
-    artista_normalizado = artista.strip().lower()
-    return any(
-        e["artista"].strip().lower() == artista_normalizado and e.get("user_feedback") == "negativo"
-        for e in _do_usuario(carregar_historico(), discord_user_id)
-    )
-
-
 # --------------------------------------------------------------------------
 # Eventos de escuta passivos (2026-08-26, pedido do usuário: "Registrar
 # eventos passivos úteis... mesmo quando o evento não alterar imediatamente o
