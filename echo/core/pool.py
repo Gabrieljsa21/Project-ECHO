@@ -146,9 +146,8 @@ def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excl
     voto não saem do pool") - dedup de CURTO prazo (não repetir na mesma
     sessão) é responsabilidade de `excluidos_sessao`, de quem chama; só sai
     do pool de vez quando recebe um voto de verdade (`feedback.py` chama
-    `remover_track`/`invalidar_relacionados`), ou quando uma rodada de
-    descoberta a filtra via `historico.foi_votada` em `gerar_pool_
-    incremental`."""
+    `remover_track`), ou quando uma rodada de descoberta a filtra via
+    `historico.foi_votada` em `gerar_pool_incremental`."""
     pool = carregar_pool(discord_user_id)
     if not pool:
         return None
@@ -170,28 +169,15 @@ def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excl
 
 def remover_track(discord_user_id, titulo, artista):
     """Sai do pool assim que recebe voto (positivo OU negativo) - chamado
-    por `feedback.py` em toda avaliação explícita (2026-08-26). Diferente
-    de `invalidar_relacionados` (remove o ARTISTA inteiro, só num 👎) -
-    aqui é só a faixa exata, então um 👍 tira a música votada sem mexer em
-    mais nada do mesmo artista."""
+    por `feedback.py` em toda avaliação explícita (2026-08-26). Só a FAIXA
+    EXATA - um voto numa música nunca mexe em mais nada do mesmo artista
+    (2026-08-27, pedido do usuário: "um 👎 em 1 musica n pode condenar
+    todas desse artista. Assim como o like n aprova todas tbm, algumas eu
+    gosto e outras nao" - `invalidar_relacionados`, que removia o artista
+    inteiro num 👎, foi removido por esse mesmo motivo)."""
     pool = carregar_pool(discord_user_id)
     alvo = _id_candidato({"artista": artista, "titulo": titulo})
     pool_filtrado = [c for c in pool if _id_candidato(c) != alvo]
     if len(pool_filtrado) != len(pool):
         _salvar_pool(discord_user_id, pool_filtrado)
-    return pool_filtrado
-
-
-def invalidar_relacionados(discord_user_id, artista, generos=None):
-    """👎 forte numa faixa (2026-08-26, pedido do usuário) - remove do pool
-    candidatos ainda não consumidos do MESMO artista, sem esperar a próxima
-    rodada semanal de descoberta (mesmo critério "estrito" já usado em
-    `artista_tem_feedback_negativo`, seção "por que só artista, não gênero"
-    abaixo). `generos` aceito por compatibilidade de assinatura, não usado
-    pra filtrar - gêneros reais do Last.fm costumam ser amplos demais
-    (ex.: "rock", "pop") e derrubariam o pool inteiro por engano."""
-    pool = carregar_pool(discord_user_id)
-    artista_normalizado = artista.strip().lower()
-    pool_filtrado = [c for c in pool if c["artista"].strip().lower() != artista_normalizado]
-    _salvar_pool(discord_user_id, pool_filtrado)
     return pool_filtrado

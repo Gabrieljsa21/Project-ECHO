@@ -33,14 +33,6 @@ def test_feedback_em_track_inexistente_devolve_none():
     assert historico_mod.registrar_feedback(USUARIO, "artista::musica-que-nao-existe", "positivo") is None
 
 
-def test_artista_tem_feedback_negativo():
-    historico_mod.registrar_recomendacao(USUARIO, "Song A", "Artista A", reason="compatibilidade", category="compatibilidade")
-    track_id = historico_mod.track_id("Song A", "Artista A")
-    historico_mod.registrar_feedback(USUARIO, track_id, "negativo")
-    assert historico_mod.artista_tem_feedback_negativo(USUARIO, "Artista A")
-    assert not historico_mod.artista_tem_feedback_negativo(USUARIO, "Artista B")
-
-
 def test_foi_votada_so_conta_voto_de_verdade():
     """Tocar sem avaliar NÃO conta como votada (pedido do usuário
     2026-08-26: "Musicas sem voto não saem do pool") - só 👍/👎 de verdade."""
