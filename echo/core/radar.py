@@ -4,7 +4,9 @@ candidatos já ranqueados por `core/recomendador.py`, respeitando a composição
 (5 compatibilidade / 3 relevância / 2 descoberta / 1 exploração pra 10 músicas) e a
 regra de diversidade (máx. 1 faixa por artista por edição). Qualidade tem prioridade
 sobre quantidade - nunca preenche a quota com um candidato ruim só pra bater o
-número (seção 7.3)."""
+número (seção 7.3).
+
+🔥 Por pessoa (2026-08-26) - estado do Radar agora é `{discord_user_id: {...}}`."""
 import os
 import json
 from datetime import date
@@ -12,6 +14,7 @@ from datetime import date
 from echo.core import perfil as perfil_mod
 from echo.core import recomendador as recomendador_mod
 from echo.core import historico as historico_mod
+from echo.core import pool as pool_mod
 
 ARQUIVO_ESTADO_RADAR = "data/radar_estado.json"
 
@@ -25,28 +28,34 @@ COMPOSICAO_PADRAO = {
 SCORE_MINIMO_QUALIDADE = 0.15
 
 
-def _carregar_estado():
+def _carregar_estado_todos():
     if not os.path.exists(ARQUIVO_ESTADO_RADAR):
         return {}
     try:
         with open(ARQUIVO_ESTADO_RADAR, "r", encoding="utf-8") as f:
-            return json.load(f)
+            dados = json.load(f)
     except Exception:
         return {}
+    # 🔥 Migração one-shot do formato antigo (estado único, sem chave de pessoa)
+    if "gerado_em" in dados:
+        dados = {perfil_mod.DONO_DISCORD_ID_MIGRACAO: dados}
+        _salvar_estado_todos(dados)
+    return dados
 
 
-def _salvar_estado(estado):
+def _salvar_estado_todos(todos):
     os.makedirs(os.path.dirname(ARQUIVO_ESTADO_RADAR), exist_ok=True)
     with open(ARQUIVO_ESTADO_RADAR, "w", encoding="utf-8") as f:
-        json.dump(estado, f, ensure_ascii=False, indent=2)
+        json.dump(todos, f, ensure_ascii=False, indent=2)
 
 
-def radar_ja_gerado_hoje():
-    return _carregar_estado().get("gerado_em") == date.today().isoformat()
+def radar_ja_gerado_hoje(discord_user_id):
+    estado = _carregar_estado_todos().get(str(discord_user_id), {})
+    return estado.get("gerado_em") == date.today().isoformat()
 
 
-def obter_ultimo_radar():
-    return _carregar_estado().get("ultimo_radar", [])
+def obter_ultimo_radar(discord_user_id):
+    return _carregar_estado_todos().get(str(discord_user_id), {}).get("ultimo_radar", [])
 
 
 def _id_candidato(candidato):
@@ -68,13 +77,13 @@ def _selecionar_com_diversidade(candidatos_categoria, quantidade, artistas_usado
     return selecionados
 
 
-def gerar_radar(candidatos, quantidade=QUANTIDADE_PADRAO, composicao=None):
+def gerar_radar(discord_user_id, candidatos, quantidade=QUANTIDADE_PADRAO, composicao=None):
     """`candidatos` já vem do provedor (lançamentos + busca pelos artistas favoritos,
     ver `api_bridge.py`) - esta função só ranqueia e seleciona, nunca busca dado
     externo sozinha (mantém o motor desacoplado do provedor, seção 17)."""
     composicao = composicao or COMPOSICAO_PADRAO
-    perfil = perfil_mod.carregar_perfil()
-    ranqueados = recomendador_mod.ranquear(candidatos, perfil)
+    perfil = perfil_mod.carregar_perfil(discord_user_id)
+    ranqueados = recomendador_mod.ranquear(discord_user_id, candidatos, perfil)
 
     por_categoria = {categoria: [] for categoria in composicao}
     for candidato in ranqueados:
@@ -120,12 +129,20 @@ def gerar_radar(candidatos, quantidade=QUANTIDADE_PADRAO, composicao=None):
 
     for candidato in selecao:
         historico_mod.registrar_recomendacao(
-            candidato["titulo"], candidato["artista"],
+            discord_user_id, candidato["titulo"], candidato["artista"],
             reason=candidato["_categoria"], category=candidato["_categoria"],
         )
 
-    _salvar_estado({
+    todos = _carregar_estado_todos()
+    todos[str(discord_user_id)] = {
         "gerado_em": date.today().isoformat(),
         "ultimo_radar": selecao,
-    })
+    }
+    _salvar_estado_todos(todos)
+
+    # 🔥 Reaproveita a MESMA rodada de descoberta pra alimentar o pool do
+    # /caos (2026-08-26) - `ranqueados` já é a lista COMPLETA (antes da
+    # curadoria de diversidade acima), zero chamada de rede extra.
+    pool_mod.gerar_pool_incremental(discord_user_id, ranqueados)
+
     return selecao
