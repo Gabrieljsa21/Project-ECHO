@@ -276,6 +276,68 @@ rede no caminho crítico** entre uma faixa acabar e a próxima começar.
   (`disliked_artists`, seção "Contrato HTTP"), nunca inferido de um voto
   numa única música.
 
+### Reabastecimento de emergência em background (2026-08-28)
+
+Achado real investigando "/caos esta tocando apenas as musicas aprovadas
+[depois de um tempo]": o pool pessoal de um usuário tinha só **29
+candidatas** sem voto (bem abaixo do `TAMANHO_ALVO`=200), enquanto o ERIS
+mantém até ~110 faixas excluídas de uma vez numa sessão longa (histórico de
+sessão até 50 + fila lógica reservada até 50 + streams prontos até 10, ver
+`ARQUITETURA.md` do [Project ERIS](../../Project-ERIS)). Assim que as 29
+eram tocadas/reservadas, `consumir_proxima` passava a devolver `None`
+sempre - a Camada 1 (pool) ficava presa vazia pelo resto da sessão inteira,
+e o `/caos` nunca saía da Camada 2 (aprovadas) até a próxima rodada semanal
+do Radar regenerar o pool.
+
+Corrigido com uma fonte de descoberta NOVA, independente do Radar semanal
+(pedido explícito do usuário - "a geração semanal pode continuar existindo
+como manutenção preventiva, mas não pode ser a única forma de abastecer o
+pool"):
+
+- `consumir_proxima` calcula `candidatos_validos` (pool menos
+  `excluidos_sessao` - exatamente "quantidade disponível" pro usuário) e,
+  se ficar abaixo de `MINIMO_DISPONIVEL` (20), dispara `reabastecer_pool`
+  numa THREAD separada (`_acionar_reabastecimento_background`) - o ECHO é
+  um `HTTPServer` de thread única (`api_bridge.py`), então "não bloquear a
+  reprodução" aqui significa literalmente não segurar essa thread com
+  chamadas de rede. A checagem NÃO impede de devolver o que ainda sobra no
+  pool - só garante que uma pesquisa nova já começou.
+- `reabastecer_pool` usa os ARTISTAS das músicas **aprovadas** do usuário
+  como sementes (pedido explícito - fonte deliberadamente diferente do
+  perfil geral de favoritos/gêneros que já alimenta o Radar semanal),
+  busca até `LIMITE_FAIXAS_POR_SEMENTE` (15) faixas por artista
+  (`obter_faixas_do_artista`), filtra quem já está no pool/já foi votada/já
+  está excluída pela sessão atual, rankeia com o MESMO motor determinístico
+  (`recomendador.ranquear`) e tenta juntar `META_REABASTECIMENTO` (30)
+  candidatas novas, avançando pra próxima semente se uma não render o
+  suficiente. Dedup por `url_lastfm` (aproximação de "ID da plataforma" -
+  Last.fm não tem um ID numérico estável de faixa) com fallback pro
+  `artista::título` normalizado de sempre.
+- **Incremental de verdade** - grava no `pool_musical.json` a cada semente
+  resolvida (não acumula em memória até o fim da busca inteira), então uma
+  sessão presa na Camada 2 já pode voltar a consumir do pool assim que a
+  primeira leva entrar, sem esperar todas as sementes.
+- `_reabastecendo` (set + lock) impede disparar 2 pesquisas em paralelo pro
+  MESMO usuário - o ERIS chama `consumir_proxima` várias vezes seguidas
+  reabastecendo a própria `fila_logica`, então sem essa guarda cada chamada
+  nessa janela criaria uma thread nova.
+- `_lock_arquivo` (novo) protege toda leitura-modifica-grava de
+  `pool_musical.json` - antes desta feature só a thread principal do
+  `HTTPServer` mexia nesse arquivo (single-threaded, sem risco de corrida);
+  agora a thread de reabastecimento pode escrever ao mesmo tempo que um
+  voto/feedback ao vivo (`remover_track`) ou uma geração semanal
+  (`gerar_pool_incremental`) - sem o lock, um load-modifica-grava
+  concorrente perderia a escrita de um dos dois lados.
+- Log de cada rodada (`print`, prefixo `[ECHO]`): quando começou, quanto
+  levou, quantas faixas foram analisadas/descartadas/adicionadas -
+  validado ao vivo contra a API real do Last.fm (pool do dono foi de 29
+  pra 59 candidatas numa rodada de ~3s).
+- Nenhuma mudança precisou entrar em `continuacao.py` - a Camada 2
+  (aprovadas) já era só um fallback consultado quando a Camada 1 devolve
+  `None`; assim que o reabastecimento grava candidatas novas no arquivo, a
+  PRÓXIMA chamada a `consumir_proxima` já enxerga isso e volta a priorizar
+  o pool sozinha, sem nenhum estado de sessão pra resetar.
+
 ## Continuação ao vivo (Modo Música do ERIS, 2026-08-25)
 
 Pedido do usuário: "quero q alguem seja meu dj exclusivo... qnd eu pedir uma
