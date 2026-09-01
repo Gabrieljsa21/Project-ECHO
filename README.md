@@ -71,6 +71,14 @@ Sem loop de manutenção próprio (mesmo padrão do HESTIA) - o ECHO fica parado
 esperando requisição HTTP na porta 8774 (`echo/api_bridge.py`). A geração do Radar só
 roda quando alguém pergunta (normalmente a GAIA).
 
+**Sem terminal aberto (2026-09-01)**: `iniciar_echo_oculto.vbs` sobe o
+processo escondido via `pythonw.exe`, sem janela de console nenhuma - mesmo
+padrão do `iniciar_iris_oculto.vbs`/`iniciar_argus_oculto.vbs`. **Ainda sem
+redirecionamento de log pra arquivo** (diferente da GAIA/ERIS, que já
+espelham stdout/stderr - ver `_RedirecionadorLog` em `Project-ERIS/eris/
+main.py`) - rodando assim, qualquer `print()`/traceback é descartado no
+vazio; ver `TODO.md`.
+
 ## Rodar os testes
 
 ```bash

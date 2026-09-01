@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Novidades
+- **`iniciar_echo.bat`/`iniciar_echo_oculto.vbs` (2026-09-01)** - roda o ECHO escondido via `pythonw.exe`, sem console. Usado pelo item "ECHO" da categoria "Projects" do IRIS (ver `Project-IRIS/ARQUITETURA.md`). Ver `README.md`.
+
 ### Corrigido
 - **`/caos` ficava preso tocando só as aprovadas depois que o pool pessoal esgotava (2026-08-28)** - achado real: pool de um usuário tinha só 29 candidatas sem voto (bem abaixo do alvo de 200), e o ERIS mantém até ~110 faixas excluídas de uma vez numa sessão longa - assim que as 29 eram tocadas/reservadas, a Camada 1 (pool) ficava vazia pelo resto da sessão até a próxima rodada semanal do Radar. Corrigido com reabastecimento de emergência em BACKGROUND (thread separada, nunca bloqueia o `/caos`): `pool.consumir_proxima` dispara `pool.reabastecer_pool` assim que sobram menos de 20 candidatas disponíveis, usando os artistas das músicas aprovadas do usuário como semente pra buscar até 30 faixas novas no Last.fm, gravadas no pool incrementalmente (não só no final). Validado ao vivo contra a API real - pool foi de 29 pra 59 candidatas numa rodada de ~3s. Ver `ARQUITETURA.md`.
 

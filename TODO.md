@@ -5,6 +5,15 @@ Radar Musical sob demanda E proativo (semanal, via Agendador Diário da GAIA),
 histórico/dedup, feedback 👍/👎, validado contra a API real do Last.fm com
 credencial real do usuário. Ver `CHANGELOG.md` pro detalhe completo.
 
+## Pendências conhecidas
+
+- **Log em disco quando rodando escondido (2026-09-01)** - `iniciar_echo_
+  oculto.vbs` (novo) sobe o processo via `pythonw.exe`, que descarta
+  `print()`/traceback no vazio (sem console nenhum) - sem um
+  `_RedirecionadorLog` (mesmo padrão de `Project-ERIS/eris/main.py`), um
+  crash silencioso não deixa nenhum rastro. Não bloqueou a criação do
+  launcher, mas dificulta diagnosticar qualquer problema rodando assim.
+
 ## Prioridade média (Fase 2 do ECHO_SPEC)
 
 - **Nível de descoberta influenciando o ranking de verdade** (hoje
