@@ -11,6 +11,33 @@ PESO_RELEVANCIA = 0.25
 PESO_DESCOBERTA = 0.15
 PESO_EXPLORACAO = 0.10
 
+# Seção 16 do ECHO_SPEC ("nível de descoberta... deve alterar os pesos do
+# MESMO motor de recomendação, não criar perfis separados") - discovery_level
+# já era persistido no perfil desde a Fase 1, mas nunca influenciava o
+# ranking (TODO.md, Fase 2, pendência resolvida aqui). 0.5 (padrão/
+# "equilibrado") preserva os pesos base acima; o deslocamento sai inteiro de
+# compatibilidade e entra em descoberta/exploração na mesma proporção que já
+# tinham entre si - relevância atual fica fixa (ficar sabendo o que tá
+# bombando não depende de quanto o usuário quer fugir da própria bolha).
+DESLOCAMENTO_MAXIMO_DESCOBERTA = 0.25
+
+
+def pesos_efetivos(discovery_level):
+    """(compatibilidade, relevancia, descoberta, exploracao) pro nível de
+    descoberta desse usuário: 0.0 = Conservador (some com descoberta/
+    exploração, tudo vira compatibilidade), 0.5 = Equilibrado (pesos padrão,
+    igual antes desta função existir), 1.0 = Explorador (dobra descoberta/
+    exploração às custas de compatibilidade). Soma sempre 1.0."""
+    discovery_level = max(0.0, min(1.0, 0.5 if discovery_level is None else discovery_level))
+    deslocamento = (discovery_level - 0.5) * 2 * DESLOCAMENTO_MAXIMO_DESCOBERTA
+    base_descoberta_exploracao = PESO_DESCOBERTA + PESO_EXPLORACAO
+    return {
+        "compatibilidade": PESO_COMPATIBILIDADE - deslocamento,
+        "relevancia": PESO_RELEVANCIA,
+        "descoberta": PESO_DESCOBERTA + deslocamento * (PESO_DESCOBERTA / base_descoberta_exploracao),
+        "exploracao": PESO_EXPLORACAO + deslocamento * (PESO_EXPLORACAO / base_descoberta_exploracao),
+    }
+
 
 def _artista_favorito(candidato, perfil):
     nome = candidato["artista"].strip().lower()
@@ -102,11 +129,12 @@ def calcular_score(discord_user_id, candidato, perfil, penalidades_sessao=None):
     if _artista_rejeitado(candidato, perfil):
         return -1.0, None
 
+    pesos = pesos_efetivos(perfil.get("discovery_level"))
     componentes = {
-        "compatibilidade": _compatibilidade(candidato, perfil) * PESO_COMPATIBILIDADE,
-        "relevancia": _relevancia_atual(candidato) * PESO_RELEVANCIA,
-        "descoberta": _descoberta(candidato, perfil) * PESO_DESCOBERTA,
-        "exploracao": _exploracao(candidato, perfil) * PESO_EXPLORACAO,
+        "compatibilidade": _compatibilidade(candidato, perfil) * pesos["compatibilidade"],
+        "relevancia": _relevancia_atual(candidato) * pesos["relevancia"],
+        "descoberta": _descoberta(candidato, perfil) * pesos["descoberta"],
+        "exploracao": _exploracao(candidato, perfil) * pesos["exploracao"],
     }
     categoria_dominante = max(componentes, key=componentes.get)
     score = sum(componentes.values()) - _penalidade_diversidade_sessao(candidato, penalidades_sessao)
