@@ -17,6 +17,8 @@ from echo.core import radar as radar_mod
 from echo.core import feedback as feedback_mod
 from echo.core import historico as historico_mod
 from echo.core import continuacao as continuacao_mod
+from echo.core import em_alta as em_alta_mod
+from echo.core import redescobertas as redescobertas_mod
 from echo.providers import obter_provedor, ProvedorIndisponivel
 
 LOCAL_API_HOST = "127.0.0.1"
@@ -108,6 +110,20 @@ class _API(BaseHTTPRequestHandler):
         elif caminho == "/radar/historico":
             limite = int((params.get("limite") or [20])[0])
             self._responder_json(historico_mod.obter_historico(discord_user_id, limite))
+        elif caminho == "/em_alta":
+            # 🔥 Seção 3.3 do ECHO_SPEC - mesma fonte do Radar (chart global),
+            # apresentação dedicada sem filtrar por compatibilidade pessoal.
+            try:
+                provedor = obter_provedor()
+                candidatos = provedor.obter_lancamentos_novos(40)
+                self._responder_json({"em_alta": em_alta_mod.obter_em_alta(discord_user_id, candidatos)})
+            except ProvedorIndisponivel as e:
+                self._responder_json({"erro": str(e), "em_alta": []}, status=503)
+        elif caminho == "/redescobertas":
+            # 🔥 Seção 9 do ECHO_SPEC - só dados locais (histórico/eventos de
+            # escuta), sem chamada ao provedor.
+            quantidade = int((params.get("quantidade") or [1])[0])
+            self._responder_json({"redescobertas": redescobertas_mod.obter_redescobertas(discord_user_id, quantidade)})
         else:
             self._responder_404()
 

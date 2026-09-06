@@ -33,15 +33,29 @@ MIGRACAO` em `perfil.py`, reaproveitado por `historico.py`/`radar.py`).
   real ainda (Fase 2, exceto import via Last.fm/lote, ver seção própria abaixo).
 - **`recomendador.py`** - calcula candidatos e ranking. Score determinístico:
   `compatibilidade*0.50 + relevância*0.25 + descoberta*0.15 + exploração*0.10`
-  (seção 6/19 do ECHO_SPEC), com exclusão total (score negativo) pra repetição
-  recente e artista EXPLICITAMENTE rejeitado (`disliked_artists`, ação
-  deliberada - 🔥 desde 2026-08-27, um 👎 numa faixa avulsa NUNCA bloqueia o
-  artista inteiro, ver "Pool pessoal pré-calculado" abaixo).
+  (seção 6/19 do ECHO_SPEC) na base ("equilibrado"), com exclusão total (score
+  negativo) pra repetição recente e artista EXPLICITAMENTE rejeitado
+  (`disliked_artists`, ação deliberada - 🔥 desde 2026-08-27, um 👎 numa faixa
+  avulsa NUNCA bloqueia o artista inteiro, ver "Pool pessoal pré-calculado"
+  abaixo).
   `calcular_score`/`ranquear`
   aceitam `penalidades_sessao` opcional (dict `"artista::nome"`/`"genero::nome"`
   -> contagem) - reduz score de quem já apareceu demais NUMA sessão contínua do
   Modo Música, sem esperar o dedup exato de faixa (evita "sempre o mesmo
   artista 3x seguidas" mesmo quando cada faixa em si é diferente).
+  - 🔥 **Nível de descoberta influencia os pesos de verdade (2026-09-06,
+    seção 16 do ECHO_SPEC)** - `pesos_efetivos(discovery_level)` desloca peso
+    entre compatibilidade e descoberta/exploração (relevância fica fixa - ficar
+    sabendo o que tá bombando não depende de quanto o usuário quer fugir da
+    própria bolha); `discovery_level=0.5` (padrão) preserva os pesos base
+    acima exatamente. `0.0` (Conservador) zera descoberta/exploração de vez;
+    `1.0` (Explorador) dobra a soma de descoberta+exploração às custas de
+    compatibilidade. `calcular_score` lê `perfil["discovery_level"]` em vez
+    dos pesos fixos - mesmo motor, sem perfil separado (não é sobre o score
+    absoluto de UM candidato subir, é sobre um candidato obscuro/de descoberta
+    passar a RANQUEAR acima de um mainstream do mesmo gênero quando o usuário é
+    Explorador, ver `tests/test_recomendador.py`). Antes, `discovery_level` só
+    era persistido no perfil (`perfil.py`) sem efeito nenhum aqui.
 - **`radar.py`** - gera a seleção semanal: aplica a composição padrão (5
   compatibilidade / 3 relevância / 2 descoberta / 1 exploração pra 10 músicas, seção
   7.3) com diversidade (máx. 1 faixa por artista) e um preenchimento em RODÍZIO entre
@@ -200,6 +214,16 @@ formato do parâmetro importa.
   (`pool.gerar_pool_incremental`). 503 com `{"erro", "radar": []}` se o provedor
   não estiver disponível.
 - `GET /radar/historico?limite=N` - últimas N recomendações (mais recente primeiro).
+- `GET /em_alta` (novo, 2026-09-06, seção 3.3 do ECHO_SPEC) - músicas
+  atualmente relevantes, sem filtrar por compatibilidade pessoal. Mesma
+  coleta do Radar (`obter_lancamentos_novos`), diversidade (máx. 1 por
+  artista) e dedup de 90 dias compartilhado com o Radar. 503 com `{"erro",
+  "em_alta": []}` se o provedor não estiver disponível.
+- `GET /redescobertas?quantidade=N` (novo, 2026-09-06, seção 9 do ECHO_SPEC) -
+  faixas aprovadas (👍) sem aparecer (recomendadas OU realmente ouvidas) há
+  pelo menos 180 dias, mais esquecida primeiro. `quantidade` padrão 1
+  (frequência deve ser baixa, seção 9). Só dados locais, nunca chama o
+  provedor - não pode dar 503.
 - `POST /perfil/importar_historico` `{"limite"}` - seed do perfil a partir do
   histórico real de escuta (`LASTFM_USERNAME` obrigatório). 503 se não vinculado.
 - `POST /perfil/importar_artistas` `{"nomes": [...]}` - cadastro em lote de
@@ -407,13 +431,19 @@ Peso comportamental contínuo (hoje o histórico do Last.fm só vira seed
 inicial do perfil, não ajusta com o tempo), Playlist Descobertas automática
 (o playback de música em si já existe via ERIS/YouTube fora da abstração de
 provedor do ECHO - mas SALVAR uma playlist gerenciada continua exigindo um
-provedor com biblioteca/playlist de usuário, ex.: Spotify com OAuth), Em
-Alta dedicado, Redescobertas dedicadas, nível de descoberta configurável de
-verdade (hoje só persiste o valor, não influencia o ranking ainda),
+provedor com biblioteca/playlist de usuário, ex.: Spotify com OAuth),
 recomendações contextuais. `criar_playlist`/`adicionar_faixa_playlist`/
 `tocar_faixa` na abstração `ProvedorMusical` continuam sem implementação -
 o playback de verdade achou outro caminho (ERIS busca no YouTube direto,
 nunca precisou dessa interface).
+
+Nível de descoberta influenciando o ranking, Em Alta dedicado e
+Redescobertas dedicadas (todos resolvidos em 2026-09-06, ver seções acima)
+existem no ECHO mas ainda sem consumidor do lado da GAIA - `echo_client.py`
+(repo dela) ainda não tem os wrappers de `/em_alta`/`/redescobertas`, e
+nenhuma tag/comando os expõe em conversa. Mesmo padrão de outros endpoints já
+expostos "pra um Painel futuro" (ver `integrations/echo_client.py` no repo da
+GAIA) - fica pra quando a integração do lado dela fizer sentido.
 
 ## Integração com a GAIA (feita no repo dela)
 

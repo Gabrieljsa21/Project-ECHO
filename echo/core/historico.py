@@ -169,6 +169,25 @@ def registrar_evento_escuta(discord_user_id, titulo, artista, fracao_tocada, pul
     _salvar_eventos(eventos)
 
 
+def obter_ultima_aparicao(discord_user_id, track_id_alvo):
+    """Data mais recente (recomendada OU realmente ouvida) em que essa faixa
+    apareceu pra essa pessoa - usado por `core/redescobertas.py` (seção 9)
+    pra saber há quanto tempo ela sumiu da rotação. `None` se nunca apareceu
+    em nenhuma das duas fontes."""
+    discord_user_id = str(discord_user_id)
+    datas = [
+        date.fromisoformat(e["recommended_at"])
+        for e in _do_usuario(carregar_historico(), discord_user_id)
+        if e["track_id"] == track_id_alvo
+    ]
+    datas += [
+        date.fromisoformat(e["registrado_em"])
+        for e in _carregar_eventos()
+        if e.get("discord_user_id") == discord_user_id and e["track_id"] == track_id_alvo
+    ]
+    return max(datas) if datas else None
+
+
 def contar_eventos_fracos_recentes(discord_user_id, artista, negativo, limite_eventos=10):
     """Quantos dos últimos `limite_eventos` de um artista, pra essa pessoa, são
     sinais fracos na direção pedida (`negativo=True` conta skips <25%;
