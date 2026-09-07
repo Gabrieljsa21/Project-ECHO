@@ -14,11 +14,26 @@ serviço de streaming) - mesmo princípio de "núcleo do Modo DJ sobrevive à tr
 integração" (seção 31.7)."""
 import os
 import math
+import time
 import requests
 
 from echo.providers import ProvedorMusical, ProvedorIndisponivel
 
 _URL_BASE = "http://ws.audioscrobbler.com/2.0/"
+
+# 🔥 Cache em nível de MÓDULO, não de instância (2026-09-06, achado do
+# usuário no Project-SIREN: "porque está demorando pra entrar na página
+# Descoberta... entrando, saindo e entrando de novo também demora") -
+# `obter_provedor()` (`providers/__init__.py`) cria uma instância NOVA a
+# cada chamada, então um cache em `self` seria descartado antes de servir
+# pra nada. Sem isso, `/em_alta` fazia 1 chamada de chart + até
+# `_MAX_ARTISTAS_PARA_RESOLVER_GENERO` chamadas (1 POR artista, Last.fm não
+# tem endpoint de gênero em lote) - TODA VEZ, mesmo pedindo a mesma coisa
+# 10 segundos depois.
+_TTL_LANCAMENTOS_SEGUNDOS = 600  # 10min - chart global não muda a cada request
+_TTL_GENERO_SEGUNDOS = 7 * 24 * 3600  # 7 dias - gênero de artista é essencialmente estático
+_cache_lancamentos = {}  # limite -> (resultado, timestamp)
+_cache_generos = {}  # nome_artista_lower -> (generos, timestamp)
 
 # 🔥 Last.fm não tem campo de popularidade normalizado (0-100) como o Spotify tinha
 # - só `listeners` (contagem bruta, sem teto). Escala LOGARÍTMICA entre um piso
@@ -84,16 +99,27 @@ class ProvedorLastfm(ProvedorMusical):
     def _resolver_generos_por_artista(self, nomes_artistas):
         """1 chamada POR artista (Last.fm não tem endpoint de gênero em lote) -
         capado em `_MAX_ARTISTAS_PARA_RESOLVER_GENERO` pra não explodir o número
-        de requisições numa lista grande de candidatos."""
+        de requisições numa lista grande de candidatos. Cacheado por artista
+        (`_cache_generos`, TTL de dias) - gênero praticamente nunca muda, então
+        um artista já resolvido antes (em QUALQUER chamada, radar/em_alta/
+        importação) nunca precisa de rede de novo tão cedo."""
         nomes_unicos = list(dict.fromkeys(n for n in nomes_artistas if n))[:_MAX_ARTISTAS_PARA_RESOLVER_GENERO]
+        agora = time.time()
         generos = {}
         for nome in nomes_unicos:
+            chave = nome.lower()
+            em_cache = _cache_generos.get(chave)
+            if em_cache is not None and (agora - em_cache[1]) < _TTL_GENERO_SEGUNDOS:
+                generos[chave] = em_cache[0]
+                continue
             try:
                 dados = self._get("artist.gettoptags", artist=nome, autocorrect=1)
                 tags = dados.get("toptags", {}).get("tag", [])
-                generos[nome.lower()] = [t["name"].lower() for t in tags[:5]]
+                lista_generos = [t["name"].lower() for t in tags[:5]]
             except ProvedorIndisponivel:
-                generos[nome.lower()] = []
+                lista_generos = []
+            generos[chave] = lista_generos
+            _cache_generos[chave] = (lista_generos, agora)
         return generos
 
     def _normalizar_faixa(self, faixa, generos_por_artista, fonte):
@@ -155,12 +181,23 @@ class ProvedorLastfm(ProvedorMusical):
         fonte de "relevância atual" (seção 6.2 do ECHO_SPEC: "músicas realmente
         populares, culturalmente relevantes"). Documentado como aproximação, não
         um feed de novidades de verdade - mesma ressalva que já existia na
-        implementação Spotify anterior (sem popularidade por faixa)."""
+        implementação Spotify anterior (sem popularidade por faixa).
+
+        Cacheado por `limite` (`_cache_lancamentos`, TTL de minutos) - chart
+        global não muda segundo a segundo, e sem isso TODA chamada refazia a
+        resolução de gênero de até 50 artistas do zero (achado do usuário,
+        ver comentário em `_cache_generos` acima)."""
+        agora = time.time()
+        em_cache = _cache_lancamentos.get(limite)
+        if em_cache is not None and (agora - em_cache[1]) < _TTL_LANCAMENTOS_SEGUNDOS:
+            return em_cache[0]
         dados = self._get("chart.gettoptracks", limit=min(limite, 50))
         faixas = dados.get("tracks", {}).get("track", [])
         nomes_artistas = [f.get("artist", {}).get("name") for f in faixas if isinstance(f.get("artist"), dict)]
         generos = self._resolver_generos_por_artista(nomes_artistas)
-        return [self._normalizar_faixa(f, generos, "em_alta") for f in faixas]
+        resultado = [self._normalizar_faixa(f, generos, "em_alta") for f in faixas]
+        _cache_lancamentos[limite] = (resultado, agora)
+        return resultado
 
     def obter_faixas_em_alta(self, limite=20):
         raise ProvedorIndisponivel(
