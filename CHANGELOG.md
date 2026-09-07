@@ -1,21 +1,26 @@
 # Changelog
 
+Este arquivo registra as mudanças importantes do projeto. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem o [Versionamento Semântico](https://semver.org/lang/pt-BR/).
+
 ## [Unreleased]
 
-### Novidades
-- **`iniciar_echo.bat`/`iniciar_echo_oculto.vbs` (2026-09-01)** - roda o ECHO escondido via `pythonw.exe`, sem console. Usado pelo item "ECHO" da categoria "Projects" do IRIS (ver `Project-IRIS/ARQUITETURA.md`). Ver `README.md`.
-- **3 pendências de Fase 2 do ECHO_SPEC resolvidas (2026-09-06)**, encerrando `Project ECHO.md` (spec original, removido - todo o conteúdo útil dele já está implementado ou documentado no `TODO.md`):
+### Adicionado
+
+- **`iniciar_echo.bat`/`iniciar_echo_oculto.vbs` (2026-09-01)** - roda o ECHO escondido via `pythonw.exe`, sem console. Usado pelo item "ECHO" da categoria "Projects" do IRIS (ver `Project-IRIS/docs/ARQUITETURA.md`). Ver `README.md`.
+- **3 pendências de Fase 2 do ECHO_SPEC resolvidas (2026-09-06)**, encerrando `Project ECHO.md` (spec original, removido - todo o conteúdo útil dele já está implementado ou documentado no `docs/TODO.md`):
   - **Nível de descoberta influenciando o ranking de verdade** - `core/recomendador.py` ganhou `pesos_efetivos(discovery_level)`: desloca peso entre compatibilidade e descoberta/exploração (relevância atual fica fixa), preservando os pesos base de sempre em 0.5 ("equilibrado"). Antes, `discovery_level` só era persistido no perfil sem efeito nenhum no ranking.
   - **Em Alta** (seção 3.3) - `core/em_alta.py` (`obter_em_alta`) e `GET /em_alta`: reaproveita a mesma coleta de "lançamentos" que já alimentava o Radar (`obter_lancamentos_novos`), mas numa apresentação própria sem filtrar por compatibilidade pessoal (é sobre o que tá bombando agora, não sobre o gosto de quem pergunta), com diversidade (máx. 1 faixa por artista) e o mesmo dedup de 90 dias do Radar.
   - **Redescobertas** (seção 9) - `core/redescobertas.py` (`obter_redescobertas`) e `GET /redescobertas`: identifica faixas aprovadas (👍) que não aparecem (recomendadas OU realmente ouvidas, via `historico.obter_ultima_aparicao`) há pelo menos 180 dias, mais esquecida primeiro. Só dados locais, sem chamada ao provedor.
 
 ### Corrigido
+
+- **Logs preservados durante execução escondida** (2026-09-07): `pythonw.exe` descartava `print()` e tracebacks porque não havia console. `echo.runtime_log` agora espelha `stdout` e `stderr` em `logs/AAAA-MM-DD.log`, com horário em cada linha e troca automática de arquivo na virada do dia. A pasta de runtime foi adicionada ao `.gitignore`. Validado em diretório temporário e por compilação do entrypoint.
 - **`/em_alta` (e qualquer resolução de gênero) sem cache nenhum, refazia tudo do zero a cada chamada (2026-09-06)** - achado do usuário no [Project-SIREN](../Project-SIREN): "por que está demorando pra entrar na página Descoberta... entrando, saindo e entrando de novo também demora". Causa: `provider.obter_lancamentos_novos` (`echo/providers/lastfm.py`) faz 1 chamada de chart + até `_MAX_ARTISTAS_PARA_RESOLVER_GENERO` (50) chamadas HTTP - 1 POR ARTISTA, Last.fm não tem endpoint de gênero em lote - toda vez, mesmo pedindo a mesma coisa segundos depois (`obter_provedor()` cria uma instância nova a cada request, então um cache em `self` não serviria de nada). Adicionado cache em nível de MÓDULO: `_cache_lancamentos` (10min, por `limite`) cobre o resultado inteiro de `/em_alta`; `_cache_generos` (7 dias, por artista) cobre a resolução de gênero em QUALQUER chamada (radar/em_alta/importação), já que gênero de artista praticamente nunca muda. 1ª chamada continua lenta (nada a fazer sobre isso sem pré-aquecer o cache); repetidas dentro da janela ficam quase instantâneas.
-- **`/caos` ficava preso tocando só as aprovadas depois que o pool pessoal esgotava (2026-08-28)** - achado real: pool de um usuário tinha só 29 candidatas sem voto (bem abaixo do alvo de 200), e o ERIS mantém até ~110 faixas excluídas de uma vez numa sessão longa - assim que as 29 eram tocadas/reservadas, a Camada 1 (pool) ficava vazia pelo resto da sessão até a próxima rodada semanal do Radar. Corrigido com reabastecimento de emergência em BACKGROUND (thread separada, nunca bloqueia o `/caos`): `pool.consumir_proxima` dispara `pool.reabastecer_pool` assim que sobram menos de 20 candidatas disponíveis, usando os artistas das músicas aprovadas do usuário como semente pra buscar até 30 faixas novas no Last.fm, gravadas no pool incrementalmente (não só no final). Validado ao vivo contra a API real - pool foi de 29 pra 59 candidatas numa rodada de ~3s. Ver `ARQUITETURA.md`.
+- **`/caos` ficava preso tocando só as aprovadas depois que o pool pessoal esgotava (2026-08-28)** - achado real: pool de um usuário tinha só 29 candidatas sem voto (bem abaixo do alvo de 200), e o ERIS mantém até ~110 faixas excluídas de uma vez numa sessão longa - assim que as 29 eram tocadas/reservadas, a Camada 1 (pool) ficava vazia pelo resto da sessão até a próxima rodada semanal do Radar. Corrigido com reabastecimento de emergência em BACKGROUND (thread separada, nunca bloqueia o `/caos`): `pool.consumir_proxima` dispara `pool.reabastecer_pool` assim que sobram menos de 20 candidatas disponíveis, usando os artistas das músicas aprovadas do usuário como semente pra buscar até 30 faixas novas no Last.fm, gravadas no pool incrementalmente (não só no final). Validado ao vivo contra a API real - pool foi de 29 pra 59 candidatas numa rodada de ~3s. Ver `docs/ARQUITETURA.md`.
 
-## [0.1.0] - 2026-08-25 a 2026-08-27: Modo DJ completo - Radar Musical, pool por pessoa, Modo Música ao vivo (PRs #1 a #10)
+## [0.1.0] - 2026-08-27
 
-### Novidades
+### Adicionado
 - **Repositório criado (Fase 1 do MVP, 2026-08-25)** - Project ECHO, Modo DJ da GAIA,
   baseado na especificação completa em `Project G.A.I.A/Project ECHO.md`. Perfil
   musical persistente (`echo/core/perfil.py`), motor de ranking determinístico
@@ -41,7 +46,7 @@
   `echo/providers/lastfm.py` - API gratuita, sem assinatura, sem login de usuário.
   Ganhou 2 métodos novos na abstração (`obter_faixas_do_artista`,
   `obter_faixas_por_tag`) que encaixam melhor no Last.fm do que o hack de busca
-  usado antes pro Spotify. Ver `ARQUITETURA.md` pro detalhe completo da decisão.
+  usado antes pro Spotify. Ver `docs/ARQUITETURA.md` pro detalhe completo da decisão.
 
 22 testes automatizados (`tests/`) cobrindo perfil/histórico/radar/normalização de
 popularidade, todos passando.
@@ -72,7 +77,7 @@ popularidade, todos passando.
   usuário: "quero q alguem seja meu dj exclusivo... qnd eu pedir uma
   musica, ele continue tocando outras em sequencia na mesma vibe") -
   `echo/core/continuacao.py`, uma sugestão por vez semeada pela faixa
-  tocando agora (quem toca é o [Project ERIS](../../Project-ERIS), Modo
+  tocando agora (quem toca é o [Project ERIS](../Project-ERIS), Modo
   Música novo, substitui o Jockie Music). Perfil efetivo em memória (nunca
   persistido) trata o artista/gêneros da faixa atual como preferência forte
   só pra essa sugestão. Dedup de sessão via parâmetro `excluir` (quem
@@ -158,7 +163,7 @@ popularidade, todos passando.
   `perfil.adicionar_artista_rejeitado` (`disliked_artists`), nunca
   inferido de uma avaliação de uma única música.
 
-### Correções
+### Corrigido
 - **`/caos` repetia a mesma música em sessões diferentes, com o pool
   vazio (2026-08-27)** - confirmado em produção: 3 chamadas separadas de
   `/caos` devolveram "Counting Stars - OneRepublic" toda vez. Causa raiz:
@@ -166,7 +171,7 @@ popularidade, todos passando.
   (aprovadas) sempre devolvia a PRIMEIRA entrada não excluída - e como
   cada `/caos` é sessão nova, sempre a mesma. `continuacao.
   _aprovada_aleatoria_nao_excluida` agora sorteia entre todas as
-  elegíveis. Ver `ARQUITETURA.md`.
+  elegíveis. Ver `docs/ARQUITETURA.md`.
 - **`/caos` sempre devolvia a MESMA faixa mesmo com o pool cheio
   (2026-08-27)** - confirmado gerando o pool real do dono ao vivo (162
   candidatos) e chamando `/radar/semente` 6x seguidas: sempre "Duvet - bôa"

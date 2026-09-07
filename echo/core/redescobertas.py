@@ -7,7 +7,7 @@ competir com o objetivo principal de descobrir músicas novas") - quem decide
 QUANDO oferecer uma redescoberta é a GAIA (mesmo padrão do Radar semanal),
 aqui só a seleção determinística de QUAL faixa oferecer.
 
-TODO.md, Fase 2 do ECHO_SPEC: pendência resolvida aqui."""
+docs/TODO.md, Fase 2 do ECHO_SPEC: pendência resolvida aqui."""
 from datetime import date
 
 from echo.core import historico as historico_mod

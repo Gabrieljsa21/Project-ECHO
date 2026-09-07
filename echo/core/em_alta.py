@@ -5,7 +5,7 @@ Radar Musical semanal (edição fechada, composição fixa entre categorias): Em
 Alta é consultado sob demanda e olha só popularidade atual, sem pesar
 compatibilidade - reaproveita a MESMA fonte que o Radar já usa pra
 "relevância" (`provedor.obter_lancamentos_novos`, ver `providers/lastfm.py`),
-só numa apresentação separada (TODO.md, Fase 2 do ECHO_SPEC - pendência
+só numa apresentação separada (docs/TODO.md, Fase 2 do ECHO_SPEC - pendência
 resolvida aqui).
 
 Compartilha o dedup de 90 dias do Radar (`historico.foi_recomendada_

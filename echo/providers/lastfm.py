@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Implementação de referência do provedor musical (seção 17 do ECHO_SPEC) usando a
-API do Last.fm - escolhida em vez do Spotify (2026-08-25, ver `ARQUITETURA.md`)
+API do Last.fm - escolhida em vez do Spotify (2026-08-25, ver `docs/ARQUITETURA.md`)
 porque não exige assinatura paga nem login de usuário pra dado público (chave de
 API grátis em last.fm/api/account/create), e porque a Spotify removeu justamente o
 endpoint de "novos lançamentos" (`GET /browse/new-releases`) numa mudança de

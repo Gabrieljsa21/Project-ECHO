@@ -4,7 +4,7 @@
 diretamente, só com essa interface. Trocar de provedor não deve exigir mudança no
 ranking/Radar (princípio 7 da seção 31) - prova real disso: a implementação de
 referência trocou de Spotify pra Last.fm em 2026-08-25 (ver `lastfm.py` e
-`ARQUITETURA.md`) sem tocar em nenhum módulo de `core/`."""
+`docs/ARQUITETURA.md`) sem tocar em nenhum módulo de `core/`."""
 
 
 class ProvedorIndisponivel(Exception):

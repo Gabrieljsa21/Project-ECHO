@@ -1,96 +1,76 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/fase-1%20MVP-blue" alt="Fase 1 MVP">
+  <img src="assets/icone_echo.png" alt="Project ECHO" width="180">
 </p>
 
 # Project ECHO
 
-Modo DJ da GAIA - perfil musical persistente, ranking determinístico, Radar Musical
-semanal e continuação ao vivo pra quem toca música de verdade numa call
-([Project ERIS](../../Project-ERIS)). Processo próprio, **sem interface gráfica** -
-só uma ponte HTTP; quem decide QUANDO gerar o Radar (Agendador Diário ou comando do
-usuário) e COMO apresentar (persona, explicação da recomendação) é sempre a
-[GAIA](../Project%20G.A.I.A) (assistente pessoal do mesmo autor), consultando o
-ECHO por HTTP. O ECHO nunca toca áudio nem sabe o que é YouTube/Discord - só
-metadado/ranking.
+Serviço de recomendação musical que mantém um perfil de gosto, prepara o Radar Musical e escolhe sugestões sem repetir faixas recentes.
 
-Baseado na especificação completa em `Project G.A.I.A/Project ECHO.md` (32 seções -
-objetivo, perfil musical, motor de recomendação, Radar Musical, feedback,
-explicabilidade, MVP faseado). Esta Fase 1 implementa o essencial determinístico do
-motor; a explicabilidade em linguagem natural e a apresentação ao usuário continuam
-do lado da GAIA (mesmo padrão de extração do HESTIA/MOIRAI - satélite fica com o
-dado/ranking, GAIA fica com a persona).
+## Recursos principais
 
-## A origem do nome
+- perfil musical separado por pessoa;
+- importação opcional do histórico do Last.fm;
+- Radar Musical semanal;
+- recomendações com base em artistas, gêneros e avaliações;
+- controle de repetição por histórico e por sessão;
+- fila pessoal preparada com antecedência.
 
-Eco - o Modo DJ devolve ao usuário uma versão nova/atual do que ele já gosta, sem
-nunca deixar de ser reconhecível; também referência às "bolhas" musicais que o motor
-deliberadamente evita (seção 6.4 - Exploração).
+O ECHO trabalha com dados e escolhas musicais. Ele não reproduz áudio e não tem interface gráfica.
 
-## Escopo desta Fase 1 (MVP)
+## Origem do nome
 
-- [x] Estrutura do Modo DJ (`echo/core/`, `echo/providers/`)
-- [x] Perfil musical persistente (`data/perfil.json`)
-- [x] Cadastro manual de artistas/gêneros favoritos (um por um, ou em LOTE
-      colando uma playlist/lista - ver `<CADASTRAR_ARTISTAS>` no repo da GAIA)
-- [x] Importação de histórico real de escuta via Last.fm/scrobbling (opcional,
-      requer `LASTFM_USERNAME` vinculado - ver `<IMPORTAR_GOSTO_MUSICAL>`)
-- [x] Busca de lançamentos (Last.fm - chart global + gênero, sem login/assinatura)
-- [x] Radar Musical semanal (geração sob demanda - cadência real fica com o
-      Agendador Diário da GAIA)
-- [x] Histórico de recomendações + dedup (redescoberta só após 90 dias)
-- [x] 👍 / 👎 (ajusta peso de gênero incrementalmente, nunca substitui o perfil)
-- [x] Evitar duplicatas / máx. 1 faixa por artista por edição
-- [x] Continuação ao vivo (`POST /radar/proxima`) - uma sugestão por vez,
-      semeada pela faixa que está tocando agora numa call real (Modo Música
-      do ERIS), com dedup de sessão
-- [x] Perfil/pool/histórico por pessoa (`discord_user_id`) - Modo Música é
-      social, cada pessoa do Discord tem seu próprio gosto/feedback
-- [x] Pool pessoal pré-calculado (100-300 por pessoa, incremental, nunca
-      recriado do zero) - `/caos`/continuação ao vivo sem chamada de rede
-- [x] Feedback fraco/acumulativo (tempo de escuta) além do forte (👍/👎) -
-      ajusta peso só depois de um padrão consistente
+ECHO vem de Eco, a ninfa da mitologia grega amaldiçoada por Hera a repetir apenas as últimas palavras que ouvia. Essa origem combina com o projeto, que ouve o que você gosta e traz de volta algo relacionado. Esse retorno aparece no Caos, nas recomendações, no Em Alta, nas Redescobertas e em novas descobertas.
 
-Fase 2 (peso comportamental contínuo, Em Alta, Redescobertas, nível de
-descoberta configurável) e Fase 3 (playlists gerenciadas, múltiplos
-provedores) ficam para depois - ver `TODO.md`.
+### Identidade visual
 
-## Uso standalone
+A logo mostra uma figura feminina de perfil usando fones, com os olhos fechados e cercada por uma forma circular prateada. As barras ao fundo lembram um equalizador ou espectro de áudio e deixam clara a ideia de escuta e interpretação musical.
 
-```bash
+O cabelo e o círculo criam um fluxo que retorna sobre si mesmo. A figura representa a ninfa Eco adaptada ao domínio musical moderno: **ouvir → interpretar → devolver**.
+
+## Requisitos
+
+- Python 3.11 ou mais recente;
+- chave gratuita do Last.fm para buscar músicas e lançamentos.
+
+## Instalação e uso
+
+```powershell
 uv venv
 uv pip install -e .
+Copy-Item .env.example .env
 python -m echo.main
 ```
 
-Sem `LASTFM_API_KEY` (ver `.env.example` - chave grátis, sem cartão, gerada em
-last.fm/api/account/create), o ECHO sobe normalmente mas `GET /status` reporta
-`provedor_configurado: false` e o Radar fica vazio - nunca inventa lançamento/
-música pra preencher (seção 27 do ECHO_SPEC).
+Preencha `LASTFM_API_KEY` no `.env`. Sem a chave, o serviço abre e informa que o provedor está desativado, mas o Radar fica vazio. A API local usa a porta `8774`.
 
-Sem loop de manutenção próprio (mesmo padrão do HESTIA) - o ECHO fica parado
-esperando requisição HTTP na porta 8774 (`echo/api_bridge.py`). A geração do Radar só
-roda quando alguém pergunta (normalmente a GAIA).
+Para rodar sem terminal visível, use `iniciar_echo_oculto.vbs`.
 
-**Sem terminal aberto (2026-09-01)**: `iniciar_echo_oculto.vbs` sobe o
-processo escondido via `pythonw.exe`, sem janela de console nenhuma - mesmo
-padrão do `iniciar_iris_oculto.vbs`/`iniciar_argus_oculto.vbs`. **Ainda sem
-redirecionamento de log pra arquivo** (diferente da GAIA/ERIS, que já
-espelham stdout/stderr - ver `_RedirecionadorLog` em `Project-ERIS/eris/
-main.py`) - rodando assim, qualquer `print()`/traceback é descartado no
-vazio; ver `TODO.md`.
+Para executar os testes:
 
-## Rodar os testes
-
-```bash
+```powershell
 uv pip install -e ".[dev]"
 pytest
 ```
 
-## Integração com a GAIA
+## Integrações com outros projetos
 
-`integrations/echo_client.py` (repo da GAIA) fala com a ponte HTTP daqui, e
-`garantir_echo_rodando()` sobe o processo automaticamente no boot dela (mesmo
-padrão de ERIS/HESTIA/MOIRAI) - não precisa rodar `python -m echo.main` na mão.
-Ver `ARQUITETURA.md` pro contrato HTTP completo e as decisões de design
-(provedor desacoplado, por que Last.fm em vez de Spotify, ranking sem LLM,
-diversidade/dedup).
+- **GAIA:** agenda a criação do Radar e apresenta as recomendações em conversa.
+- **ERIS:** envia o que está tocando em uma chamada e usa a próxima sugestão do ECHO.
+- **SIREN:** transforma as escolhas do ECHO em música tocando no desktop e acrescenta biblioteca, favoritos e playlists.
+
+> **SIREN canta o que você quer ouvir.**\
+> **ECHO ouve o que você gosta e traz de volta algo que combina com você.**
+
+O ECHO também pode ser consultado diretamente pela API local.
+
+## Documentação
+
+- [Arquitetura](docs/ARQUITETURA.md)
+- [Plano do player leve](docs/PLANO_ECHO_PLAYER_LEVE.md)
+- [Pendências](docs/TODO.md)
+- [Histórico de versões](CHANGELOG.md)
+- [Padrão de documentação](docs/PADRAO_DOCUMENTACAO.md)
+
+## Situação atual
+
+O perfil musical, o Radar, o histórico, as avaliações e as sugestões para sessões ao vivo estão funcionando. As próximas etapas ficam em `docs/TODO.md`.
