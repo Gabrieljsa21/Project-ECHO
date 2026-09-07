@@ -16,6 +16,7 @@ dist/
 
 # Dados gerados em runtime (estado real do usuário)
 data/*.json
+logs/
 
 # Editores / SO
 .vscode/

@@ -14,7 +14,7 @@ PESO_EXPLORACAO = 0.10
 # Seção 16 do ECHO_SPEC ("nível de descoberta... deve alterar os pesos do
 # MESMO motor de recomendação, não criar perfis separados") - discovery_level
 # já era persistido no perfil desde a Fase 1, mas nunca influenciava o
-# ranking (TODO.md, Fase 2, pendência resolvida aqui). 0.5 (padrão/
+# ranking (docs/TODO.md, Fase 2, pendência resolvida aqui). 0.5 (padrão/
 # "equilibrado") preserva os pesos base acima; o deslocamento sai inteiro de
 # compatibilidade e entra em descoberta/exploração na mesma proporção que já
 # tinham entre si - relevância atual fica fixa (ficar sabendo o que tá
