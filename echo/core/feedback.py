@@ -11,10 +11,11 @@ Pular cedo, ouvir até o final... são sinais fracos e acumulativos"):
 - **Fraco** (passivo, tempo de escuta): um evento isolado NÃO ajusta peso -
   só depois de um padrão consistente (`historico.contar_eventos_fracos_
   recentes`) é que vira um ajuste pequeno de verdade."""
+from echo.core import artistas as artistas_mod
 from echo.core import perfil as perfil_mod
 from echo.core import historico as historico_mod
 from echo.core import pool as pool_mod
-from echo.providers import ProvedorIndisponivel
+from echo.providers import ProvedorIndisponivel, obter_provedor
 
 AJUSTE_POSITIVO = 0.08
 AJUSTE_NEGATIVO = -0.12
@@ -35,6 +36,9 @@ def processar_feedback(discord_user_id, track_id, feedback, genero=None):
     continua lá ("Musicas sem voto não saem do pool"). 🔥 Só a faixa exata,
     nunca o artista inteiro (2026-08-27, pedido do usuário: "um 👎 em 1
     musica n pode condenar todas desse artista")."""
+    # Garante as notas iniciais (reconstruídas do histórico) ANTES de gravar
+    # este voto - senão a reconstrução já o incluiria e ele contaria 2x.
+    artistas_mod.carregar(discord_user_id)
     entrada = historico_mod.registrar_feedback(discord_user_id, track_id, feedback)
     if entrada is None:
         return None
@@ -46,11 +50,16 @@ def processar_feedback(discord_user_id, track_id, feedback, genero=None):
         perfil_mod.salvar_perfil(discord_user_id, perfil)
 
     pool_mod.remover_track(discord_user_id, entrada["titulo"], entrada["artista"])
+    try:
+        provedor = obter_provedor()
+    except Exception:
+        provedor = None
+    artistas_mod.registrar_voto(discord_user_id, entrada["titulo"], entrada["artista"], feedback, provedor)
 
     return entrada
 
 
-def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedback):
+def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedback, abrir_prova=True):
     """👍/👎 nos botões do Modo Música do ERIS (2026-08-26, pedido do usuário:
     "quando ela toca uma musica, podia aparecer botoes de like, dislike e
     next") - diferente do Radar, a faixa tocada ao vivo pode nunca ter
@@ -64,8 +73,13 @@ def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedb
     2026-08-26 - "Musicas sem voto não saem do pool"). 🔥 Só a faixa exata,
     nunca o artista inteiro (2026-08-27, pedido do usuário: "um 👎 em 1
     musica n pode condenar todas desse artista. Assim como o like n aprova
-    todas tbm, algumas eu gosto e outras nao")."""
+    todas tbm, algumas eu gosto e outras nao").
+
+    O voto também atualiza a nota do artista (`artistas.py`, 2026-09-26);
+    `abrir_prova=False` (importação de votos antigos) só mexe na nota, sem
+    disparar a regra das 5 chances."""
     track_id = historico_mod.track_id(titulo, artista)
+    artistas_mod.carregar(discord_user_id)  # ver processar_feedback: evita contar este voto 2x
     entrada = historico_mod.registrar_feedback(discord_user_id, track_id, feedback)
     if entrada is None:
         historico_mod.registrar_recomendacao(discord_user_id, titulo, artista, reason="modo_musica", category=None)
@@ -82,6 +96,7 @@ def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedb
         perfil_mod.salvar_perfil(discord_user_id, perfil)
 
     pool_mod.remover_track(discord_user_id, titulo, artista)
+    artistas_mod.registrar_voto(discord_user_id, titulo, artista, feedback, provedor, abrir_prova=abrir_prova)
 
     return entrada
 

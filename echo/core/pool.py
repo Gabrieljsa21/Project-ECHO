@@ -22,6 +22,7 @@ import threading
 import time
 from datetime import date
 
+from echo.core import artistas as artistas_mod
 from echo.core import historico as historico_mod
 from echo.core import recomendador as recomendador_mod
 from echo.core import perfil as perfil_mod
@@ -66,6 +67,11 @@ TAMANHO_TOPO_SORTEIO = 5
 # faixa tocando agora dentro do pool já calculado, sem precisar buscar nada novo.
 BOOST_MESMO_ARTISTA = 0.3
 BOOST_GENERO_EM_COMUM = 0.15
+
+# Nota do artista (`artistas.py`, 2026-09-26) aplicada NA HORA do sorteio: a
+# `afinidade` gravada no pool é de quando a faixa entrou, então sem isso uma
+# curtida de agora só mudaria alguma coisa na próxima geração do pool.
+PESO_NOTA_ARTISTA = 0.25
 
 
 def _id_candidato(candidato):
@@ -159,15 +165,6 @@ def _boost_proximidade(candidato, seed_artista, seed_generos):
     return boost
 
 
-def _penalidade_diversidade(candidato, penalidades_sessao):
-    if not penalidades_sessao:
-        return 0.0
-    penalidade = penalidades_sessao.get(f"artista::{candidato['artista'].strip().lower()}", 0) * 0.15
-    for genero in candidato.get("generos", []):
-        penalidade += penalidades_sessao.get(f"genero::{genero.lower()}", 0) * 0.05
-    return penalidade
-
-
 def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excluidos_sessao=None, penalidades_sessao=None):
     """Devolve uma entrada sorteada entre as `TAMANHO_TOPO_SORTEIO` de maior
     score do pool - `None` se o pool estiver vazio (quem chama decide o
@@ -190,7 +187,13 @@ def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excl
     garante que uma pesquisa nova já começou pra quando isso acabar."""
     pool = carregar_pool(discord_user_id)
     excluidos_normalizados = {e.lower() for e in (excluidos_sessao or [])}
-    candidatos_validos = [c for c in pool if _id_candidato(c) not in excluidos_normalizados]
+    artistas = artistas_mod.carregar(discord_user_id)
+    perfil = perfil_mod.carregar_perfil(discord_user_id)
+    candidatos_validos = [
+        c for c in pool
+        if _id_candidato(c) not in excluidos_normalizados
+        and not artistas_mod.esta_rejeitado(discord_user_id, c["artista"], artistas)
+    ]
 
     if len(candidatos_validos) < MINIMO_DISPONIVEL:
         _acionar_reabastecimento_background(discord_user_id, excluidos_normalizados)
@@ -200,7 +203,10 @@ def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excl
 
     candidatos_ordenados = sorted(
         candidatos_validos,
-        key=lambda c: c["afinidade"] + _boost_proximidade(c, seed_artista, seed_generos) - _penalidade_diversidade(c, penalidades_sessao),
+        key=lambda c: (
+            c["afinidade"] + _boost_proximidade(c, seed_artista, seed_generos) - recomendador_mod._penalidade_diversidade_sessao(c, penalidades_sessao)
+            + PESO_NOTA_ARTISTA * artistas_mod.nota_efetiva(discord_user_id, c["artista"], artistas, perfil)
+        ),
         reverse=True,
     )
     escolhida = random.choice(candidatos_ordenados[:TAMANHO_TOPO_SORTEIO])

@@ -51,6 +51,11 @@ class ProvedorMusical:
     def tocar_faixa(self, track_id):
         raise NotImplementedError
 
+    def obter_info_faixa(self, artista, titulo):
+        """`{"album", "duracao"}` (duração em segundos) - `None` nos campos que
+        o provedor não souber."""
+        raise ProvedorIndisponivel("não implementado neste provedor")
+
     def resolver_generos(self, nomes_artistas):
         """Devolve `{nome.lower(): [generos]}` pros artistas pedidos - usado pra
         cadastro em lote de artista favorito (`core.perfil.

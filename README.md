@@ -13,6 +13,7 @@ Serviço de recomendação musical que mantém um perfil de gosto, prepara o Rad
 - Radar Musical semanal;
 - recomendações com base em artistas, gêneros e avaliações;
 - controle de repetição por histórico e por sessão;
+- nota por artista, em que cada curtida conta, e cinco chances antes de deixar de recomendar um artista descurtido;
 - fila pessoal preparada com antecedência.
 
 O ECHO trabalha com dados e escolhas musicais. Ele não reproduz áudio e não tem interface gráfica.

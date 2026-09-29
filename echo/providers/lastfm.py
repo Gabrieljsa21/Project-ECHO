@@ -14,6 +14,7 @@ serviço de streaming) - mesmo princípio de "núcleo do Modo DJ sobrevive à tr
 integração" (seção 31.7)."""
 import os
 import math
+import re
 import time
 import requests
 
@@ -34,6 +35,8 @@ _TTL_LANCAMENTOS_SEGUNDOS = 600  # 10min - chart global não muda a cada request
 _TTL_GENERO_SEGUNDOS = 7 * 24 * 3600  # 7 dias - gênero de artista é essencialmente estático
 _cache_lancamentos = {}  # limite -> (resultado, timestamp)
 _cache_generos = {}  # nome_artista_lower -> (generos, timestamp)
+_TTL_INFO_FAIXA_SEGUNDOS = 30 * 24 * 3600  # álbum/duração de uma faixa não mudam
+_cache_info_faixa = {}  # "artista::titulo" -> (info, timestamp)
 
 # 🔥 Last.fm não tem campo de popularidade normalizado (0-100) como o Spotify tinha
 # - só `listeners` (contagem bruta, sem teto). Escala LOGARÍTMICA entre um piso
@@ -48,6 +51,14 @@ _LISTENERS_TETO = 2_000_000
 # de 3 playlists (38 artistas únicos) sem avisar ninguém. 50 ainda protege contra
 # uma explosão de verdade (ex.: um candidato de Radar com centenas de faixas).
 _MAX_ARTISTAS_PARA_RESOLVER_GENERO = 50
+
+
+def _limpar_titulo(titulo):
+    """Tira parênteses/colchetes e o trecho depois de " - " (ex.: "Ao Vivo",
+    "Remastered") - usado na 2ª tentativa de `obter_info_faixa`."""
+    titulo = re.sub(r"[\(\[].*?[\)\]]", " ", titulo)
+    titulo = titulo.split(" - ")[0]
+    return re.sub(r"\s+", " ", titulo).strip()
 
 
 def _normalizar_popularidade(listeners):
@@ -276,3 +287,34 @@ class ProvedorLastfm(ProvedorMusical):
 
     def resolver_generos(self, nomes_artistas):
         return self._resolver_generos_por_artista(nomes_artistas)
+
+    def _buscar_track_info(self, artista, titulo):
+        try:
+            return self._get("track.getInfo", artist=artista, track=titulo, autocorrect=1).get("track", {}) or {}
+        except ProvedorIndisponivel:
+            return {}
+
+    def obter_info_faixa(self, artista, titulo):
+        """Álbum e duração (`track.getInfo`, 2026-09-26) - colunas "Álbum" e
+        "Duração" da fila do SIREN. Last.fm devolve duração em milissegundos
+        e às vezes `0` (desconhecida), tratada como `None`. Cacheado por
+        faixa, inclusive quando não acha nada, pra não repetir a chamada."""
+        chave = f"{artista.strip().lower()}::{titulo.strip().lower()}"
+        agora = time.time()
+        em_cache = _cache_info_faixa.get(chave)
+        if em_cache is not None and (agora - em_cache[1]) < _TTL_INFO_FAIXA_SEGUNDOS:
+            return em_cache[0]
+        faixa = self._buscar_track_info(artista, titulo)
+        titulo_limpo = _limpar_titulo(titulo)
+        if not faixa.get("album") and titulo_limpo and titulo_limpo.lower() != titulo.strip().lower():
+            # "Música (feat. X) - Ao Vivo" costuma não existir no Last.fm com
+            # esse nome exato; o título base quase sempre existe.
+            faixa = self._buscar_track_info(artista, titulo_limpo) or faixa
+        album = (faixa.get("album") or {}).get("title") or None
+        try:
+            duracao = int(faixa.get("duration") or 0) // 1000 or None
+        except (TypeError, ValueError):
+            duracao = None
+        info = {"album": album, "duracao": duracao}
+        _cache_info_faixa[chave] = (info, agora)
+        return info

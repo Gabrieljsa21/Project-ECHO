@@ -12,6 +12,7 @@ import json
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from echo.core import artistas as artistas_mod
 from echo.core import perfil as perfil_mod
 from echo.core import radar as radar_mod
 from echo.core import feedback as feedback_mod
@@ -61,6 +62,13 @@ def _coletar_candidatos(provedor, perfil, limite_geral=40, max_artistas=10, max_
     return candidatos
 
 
+class _ProvedorVazio:
+    """Sem provedor configurado: `/artista` ainda devolve a nota/estado."""
+
+    def obter_faixas_do_artista(self, nome, limite=10):
+        return []
+
+
 class _API(BaseHTTPRequestHandler):
     def _responder_json(self, dados, status=200):
         corpo = json.dumps(dados).encode("utf-8")
@@ -90,6 +98,26 @@ class _API(BaseHTTPRequestHandler):
             self._responder_json({"aprovadas": historico_mod.obter_aprovadas(discord_user_id)})
         elif caminho == "/perfil/desaprovados":
             self._responder_json({"desaprovadas": historico_mod.obter_desaprovadas(discord_user_id)})
+        elif caminho == "/perfil/artistas":
+            # Nota e estado de cada artista (regra das 5 chances, 2026-09-26).
+            self._responder_json({"artistas": artistas_mod.resumo(discord_user_id)})
+        elif caminho == "/artista":
+            # Tela de artista do SIREN (2026-09-26) - populares + nota/estado.
+            nome = (params.get("nome") or [""])[0]
+            try:
+                provedor = obter_provedor()
+            except Exception:
+                provedor = None
+            self._responder_json(artistas_mod.detalhes(discord_user_id, provedor, nome) if provedor else
+                                 artistas_mod.detalhes(discord_user_id, _ProvedorVazio(), nome))
+        elif caminho == "/faixa/info":
+            # Colunas "Álbum"/"Duração" da fila do SIREN (2026-09-26).
+            artista = (params.get("artista") or [""])[0]
+            titulo = (params.get("titulo") or [""])[0]
+            try:
+                self._responder_json(obter_provedor().obter_info_faixa(artista, titulo))
+            except ProvedorIndisponivel as e:
+                self._responder_json({"erro": str(e), "album": None, "duracao": None}, status=503)
         elif caminho == "/perfil/voto":
             titulo = (params.get("titulo") or [""])[0]
             artista = (params.get("artista") or [""])[0]
@@ -168,8 +196,11 @@ class _API(BaseHTTPRequestHandler):
             # na hora e resolve o gênero sozinho (o ERIS só manda artista/título).
             try:
                 provedor = obter_provedor()
+                # `abrir_prova: false` (importação de votos antigos, 2026-09-26):
+                # só ajusta a nota do artista, sem disparar a regra das 5 chances.
                 entrada = feedback_mod.processar_feedback_ao_vivo(
                     discord_user_id, provedor, corpo.get("titulo", ""), corpo.get("artista", ""), corpo.get("feedback", ""),
+                    abrir_prova=bool(corpo.get("abrir_prova", True)),
                 )
                 self._responder_json({"entrada": entrada})
             except ProvedorIndisponivel as e:
