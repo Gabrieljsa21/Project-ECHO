@@ -4,6 +4,7 @@ LLM pra escolher música, só de metadados/sinais do provedor + perfil. Distribu
 padrão dos pesos (compatibilidade 50% / relevância 25% / descoberta 15% /
 exploração 10%) é a mesma usada tanto pro score de cada faixa quanto pra composição
 do Radar (`core/radar.py`)."""
+from echo.core import artistas as artistas_mod
 from echo.core import historico as historico_mod
 
 PESO_COMPATIBILIDADE = 0.50
@@ -20,6 +21,20 @@ PESO_EXPLORACAO = 0.10
 # tinham entre si - relevância atual fica fixa (ficar sabendo o que tá
 # bombando não depende de quanto o usuário quer fugir da própria bolha).
 DESLOCAMENTO_MAXIMO_DESCOBERTA = 0.25
+
+# Nota do artista (`artistas.py`, 2026-09-26) na compatibilidade: substitui o
+# antigo "+0.4 se for favorito". Favorito sem voto tem nota 1.0 e ganha o
+# mesmo +0.4 de antes.
+BONUS_NOTA_ARTISTA = 0.4
+
+# Desconto por vez que o artista/gênero já apareceu na sessão. Artista subiu
+# de 0.15 pra 0.25 (2026-09-26): com a fila do Caos do SIREN encadeando
+# pedidos, o bônus de "mesmo artista da faixa atual" (+0.3, `pool.py`)
+# vencia o desconto até a 3ª repetição - vinham 3 faixas seguidas do mesmo
+# artista. Com 0.25, a 3ª já sai negativa (máximo 2 seguidas).
+PENALIDADE_ARTISTA_SESSAO = 0.25
+PENALIDADE_GENERO_SESSAO = 0.05
+PENALIDADE_NOTA_ARTISTA = 0.3
 
 
 def pesos_efetivos(discovery_level):
@@ -60,11 +75,13 @@ def _sobreposicao_generos(candidato, perfil):
     return max(pesos) if pesos else 0.0
 
 
-def _compatibilidade(candidato, perfil):
+def _compatibilidade(candidato, perfil, nota_artista=0.0):
+    """`nota_artista` (-1 a 1, `artistas.nota_efetiva`, 2026-09-26) substitui
+    o bônus fixo de favorito: nota positiva soma até +0.4 (favorito sem voto
+    tem nota 1.0, mesmo bônus de antes), nota negativa desconta até -0.3."""
     score = _sobreposicao_generos(candidato, perfil)
-    if _artista_favorito(candidato, perfil):
-        score = min(1.0, score + 0.4)
-    return score
+    score += BONUS_NOTA_ARTISTA * max(0.0, nota_artista) - PENALIDADE_NOTA_ARTISTA * max(0.0, -nota_artista)
+    return max(0.0, min(1.0, score))
 
 
 def _relevancia_atual(candidato):
@@ -104,13 +121,13 @@ def _penalidade_diversidade_sessao(candidato, penalidades_sessao):
     tempo, só fica temporariamente pra trás)."""
     if not penalidades_sessao:
         return 0.0
-    penalidade = penalidades_sessao.get(f"artista::{candidato['artista'].strip().lower()}", 0) * 0.15
+    penalidade = penalidades_sessao.get(f"artista::{candidato['artista'].strip().lower()}", 0) * PENALIDADE_ARTISTA_SESSAO
     for genero in candidato.get("generos", []):
-        penalidade += penalidades_sessao.get(f"genero::{genero.lower()}", 0) * 0.05
+        penalidade += penalidades_sessao.get(f"genero::{genero.lower()}", 0) * PENALIDADE_GENERO_SESSAO
     return penalidade
 
 
-def calcular_score(discord_user_id, candidato, perfil, penalidades_sessao=None):
+def calcular_score(discord_user_id, candidato, perfil, penalidades_sessao=None, artistas=None):
     """Devolve (score_total, categoria_dominante). Categoria é None quando o
     candidato é excluído de vez (repetição recente ou artista explicitamente
     rejeitado pelo usuário) - significa redundante ou indesejado, mais forte
@@ -123,15 +140,25 @@ def calcular_score(discord_user_id, candidato, perfil, penalidades_sessao=None):
     adicionar_artista_rejeitado`, ação separada de avaliar uma faixa) exclui
     o artista inteiro. Feedback de faixa (👍/👎) fica só na faixa exata
     (`pool.remover_track`) + um nudge pequeno e incremental no peso do
-    gênero - nunca um bloqueio binário do artista."""
+    gênero - nunca um bloqueio binário do artista.
+
+    Exceção (2026-09-26): artista "rejeitado" pela regra das 5 chances
+    (`artistas.py`) também sai de vez - ele só chega lá depois de 👎 em
+    todas as 5 faixas mais populares dele, decisão pedida pelo usuário.
+    `artistas`: dict já carregado (`artistas.carregar`), pra não reler o
+    arquivo a cada candidato."""
     if historico_mod.foi_recomendada_recentemente(discord_user_id, candidato["titulo"], candidato["artista"]):
         return -1.0, None
     if _artista_rejeitado(candidato, perfil):
         return -1.0, None
+    artistas = artistas if artistas is not None else artistas_mod.carregar(discord_user_id)
+    if artistas_mod.esta_rejeitado(discord_user_id, candidato["artista"], artistas):
+        return -1.0, None
+    nota_artista = artistas_mod.nota_efetiva(discord_user_id, candidato["artista"], artistas, perfil)
 
     pesos = pesos_efetivos(perfil.get("discovery_level"))
     componentes = {
-        "compatibilidade": _compatibilidade(candidato, perfil) * pesos["compatibilidade"],
+        "compatibilidade": _compatibilidade(candidato, perfil, nota_artista) * pesos["compatibilidade"],
         "relevancia": _relevancia_atual(candidato) * pesos["relevancia"],
         "descoberta": _descoberta(candidato, perfil) * pesos["descoberta"],
         "exploracao": _exploracao(candidato, perfil) * pesos["exploracao"],
@@ -146,8 +173,9 @@ def ranquear(discord_user_id, candidatos, perfil, penalidades_sessao=None):
     `_score`/`_categoria` anexados pro `core/radar.py`/`core/pool.py` montar a
     seleção."""
     ranqueados = []
+    artistas = artistas_mod.carregar(discord_user_id)
     for candidato in candidatos:
-        score, categoria = calcular_score(discord_user_id, candidato, perfil, penalidades_sessao)
+        score, categoria = calcular_score(discord_user_id, candidato, perfil, penalidades_sessao, artistas)
         if score > 0:
             ranqueados.append({**candidato, "_score": score, "_categoria": categoria})
     ranqueados.sort(key=lambda c: c["_score"], reverse=True)

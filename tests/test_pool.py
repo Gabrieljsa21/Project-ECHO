@@ -169,3 +169,18 @@ def test_pool_vazio_ou_velho_true_quando_nunca_gerado():
 def test_pool_vazio_ou_velho_false_apos_gerar():
     pool_mod.gerar_pool_incremental(USUARIO, [_candidato("Song A", "Artista A", ["pop"], 0.7)])
     assert pool_mod.pool_vazio_ou_velho(USUARIO) is False
+
+
+def test_terceira_repeticao_seguida_do_mesmo_artista_perde_para_outros():
+    """2026-09-26: com 2 aparições na sessão, o desconto (2 x 0.25) passa o
+    bônus de "mesmo artista da faixa atual" (+0.3) - a fila do Caos do SIREN
+    não emenda mais 3 faixas seguidas do mesmo artista."""
+    pool_mod.gerar_pool_incremental(USUARIO, [
+        {"titulo": f"Agro {i}", "artista": "Agro", "generos": [], "_score": 0.6, "_categoria": "compatibilidade"}
+        for i in range(3)
+    ] + [
+        {"titulo": f"Outra {i}", "artista": f"Outro {i}", "generos": [], "_score": 0.5, "_categoria": "compatibilidade"}
+        for i in range(5)
+    ])
+    escolhida = pool_mod.consumir_proxima(USUARIO, seed_artista="Agro", penalidades_sessao={"artista::agro": 2})
+    assert escolhida["artista"] != "Agro"

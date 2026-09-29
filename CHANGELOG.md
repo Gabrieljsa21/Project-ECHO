@@ -6,11 +6,19 @@ Este arquivo registra as mudanças importantes do projeto. O formato segue o [Ke
 
 ### Adicionado
 
+- **Pontuação por artista e regra das 5 chances (2026-09-26)** - cada artista ganha, por pessoa, uma nota de -1 a +1 (`echo/core/artistas.py`, arquivo `data/artistas.json`). Uma curtida sobe a nota com retorno decrescente e uma descurtida desce um passo fixo, sem nunca chegar a -1 sozinha. A nota entra no ranking no lugar do bônus fixo de artista favorito (favorito sem voto continua com o mesmo bônus) e é aplicada na hora do sorteio do pool, então uma curtida já muda o que toca em seguida. Uma descurtida num artista sem nenhuma curtida (e que não é favorito) o coloca em prova: o ECHO separa as 5 faixas mais populares dele no Last.fm e intercala uma a cada 5 sugestões do Caos/continuação. Só descurtida explícita gasta chance; qualquer curtida encerra a prova. Se as 5 levarem descurtida, o artista é rejeitado de vez e some das recomendações, voltando só se a pessoa curtir uma música dele. As notas iniciais são reconstruídas dos votos já existentes, sem abrir prova retroativamente. Nova rota `GET /perfil/artistas` e novo campo opcional `abrir_prova` em `POST /radar/feedback_ao_vivo` (importação de votos antigos). Vale também para o `/caos` do ERIS, que usa o mesmo motor. Ver `docs/ARQUITETURA.md`.
+
 - **`iniciar_echo.bat`/`iniciar_echo_oculto.vbs` (2026-09-01)** - roda o ECHO escondido via `pythonw.exe`, sem console. Usado pelo item "ECHO" da categoria "Projects" do IRIS (ver `Project-IRIS/docs/ARQUITETURA.md`). Ver `README.md`.
 - **3 pendências de Fase 2 do ECHO_SPEC resolvidas (2026-09-06)**, encerrando `Project ECHO.md` (spec original, removido - todo o conteúdo útil dele já está implementado ou documentado no `docs/TODO.md`):
   - **Nível de descoberta influenciando o ranking de verdade** - `core/recomendador.py` ganhou `pesos_efetivos(discovery_level)`: desloca peso entre compatibilidade e descoberta/exploração (relevância atual fica fixa), preservando os pesos base de sempre em 0.5 ("equilibrado"). Antes, `discovery_level` só era persistido no perfil sem efeito nenhum no ranking.
   - **Em Alta** (seção 3.3) - `core/em_alta.py` (`obter_em_alta`) e `GET /em_alta`: reaproveita a mesma coleta de "lançamentos" que já alimentava o Radar (`obter_lancamentos_novos`), mas numa apresentação própria sem filtrar por compatibilidade pessoal (é sobre o que tá bombando agora, não sobre o gosto de quem pergunta), com diversidade (máx. 1 faixa por artista) e o mesmo dedup de 90 dias do Radar.
   - **Redescobertas** (seção 9) - `core/redescobertas.py` (`obter_redescobertas`) e `GET /redescobertas`: identifica faixas aprovadas (👍) que não aparecem (recomendadas OU realmente ouvidas, via `historico.obter_ultima_aparicao`) há pelo menos 180 dias, mais esquecida primeiro. Só dados locais, sem chamada ao provedor.
+
+- **Rotas `GET /artista` e `GET /faixa/info` (2026-09-26)** - `/artista?nome=` devolve a nota, o estado e as contagens de votos do artista para a pessoa, mais as 10 faixas mais ouvidas dele no Last.fm (tela do artista do SIREN; sem provedor, ainda devolve a nota). `/faixa/info?artista=&titulo=` devolve álbum e duração pelo `track.getInfo` do Last.fm, com cache de 30 dias por faixa e uma segunda tentativa com o título limpo (sem parênteses nem o trecho depois de " - "), porque títulos como "Música (feat. X) - Ao Vivo" costumam não existir com esse nome exato. Nesse caso o álbum pode ser o da versão de estúdio.
+
+### Alterado
+
+- **Desconto por artista repetido na sessão subiu de 0,15 para 0,25 (2026-09-26)** - com a fila do Caos do SIREN encadeando pedidos, o bônus de "mesmo artista da faixa atual" (+0,3) vencia o desconto até a terceira repetição, e vinham 3 faixas seguidas do mesmo artista (visto ao vivo). Agora são no máximo 2 seguidas. A fórmula, que estava duplicada entre `pool.py` e `recomendador.py`, ficou só em `recomendador._penalidade_diversidade_sessao`.
 
 ### Corrigido
 

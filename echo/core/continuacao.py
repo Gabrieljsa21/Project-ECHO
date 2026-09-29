@@ -8,9 +8,14 @@ musica, ele continue tocando outras em sequencia na mesma vibe").
 que o comando é executado") - o caminho NORMAL não faz mais chamada de rede
 nenhuma, só lê `core/pool.py`. Cadeia de fallback em camadas (pedido do
 usuário): **pool pessoal → aprovadas dessa pessoa → descoberta emergencial
-síncrona (rede, só quando os dois primeiros falharem) → None**."""
+síncrona (rede, só quando os dois primeiros falharem) → None**.
+
+Antes das camadas, a regra das 5 chances (`artistas.py`, 2026-09-26): a
+cada `artistas.INTERVALO_PROVA` sugestões, entra uma faixa de algum artista
+"em prova", se houver."""
 import random
 
+from echo.core import artistas as artistas_mod
 from echo.core import recomendador as recomendador_mod
 from echo.core import historico as historico_mod
 from echo.core import pool as pool_mod
@@ -42,7 +47,12 @@ def _aprovada_aleatoria_nao_excluida(discord_user_id, excluidos_normalizados):
     a sessão recomeçava - confirmado em produção: "Counting Stars" 3x
     seguidas). Random é aceitável aqui - só decide qual candidato entre os
     já aprovados abrir a sessão, não afeta o ranking determinístico."""
-    candidatas = [e for e in historico_mod.obter_aprovadas(discord_user_id) if e["track_id"] not in excluidos_normalizados]
+    artistas = artistas_mod.carregar(discord_user_id)
+    candidatas = [
+        e for e in historico_mod.obter_aprovadas(discord_user_id)
+        if e["track_id"] not in excluidos_normalizados
+        and not artistas_mod.esta_rejeitado(discord_user_id, e["artista"], artistas)
+    ]
     if not candidatas:
         return None
     return _de_aprovada(random.choice(candidatas))
@@ -55,6 +65,10 @@ def sugerir_proxima(discord_user_id, provedor, artista_atual, titulo_atual, excl
     uma música)."""
     excluidos_normalizados = {e.lower() for e in (excluidos or [])}
     excluidos_normalizados.add(_id_faixa(artista_atual, titulo_atual))
+
+    prova = artistas_mod.proxima_faixa_de_prova(discord_user_id, excluidos_normalizados)
+    if prova:
+        return prova
 
     generos_semente = []
     try:
@@ -120,6 +134,10 @@ def sugerir_semente(discord_user_id, provedor=None, excluidos=None, penalidades_
     nem precisa. Devolve None se não achar nada de qualidade em NENHUMA
     camada."""
     excluidos_normalizados = {e.lower() for e in (excluidos or [])}
+
+    prova = artistas_mod.proxima_faixa_de_prova(discord_user_id, excluidos_normalizados)
+    if prova:
+        return prova
 
     # Camada 1: pool pessoal já pré-calculado - sem rede.
     semente = pool_mod.consumir_proxima(discord_user_id, excluidos_sessao=excluidos_normalizados, penalidades_sessao=penalidades_sessao)

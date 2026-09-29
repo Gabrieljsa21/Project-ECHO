@@ -198,6 +198,16 @@ formato do parâmetro importa.
 - `GET /perfil/aprovados` / `GET /perfil/desaprovados` (novo, 2026-08-26) -
   `{"aprovadas": [...]}`/`{"desaprovadas": [...]}`, lista curada por
   feedback explícito (`/musica aprovadas`/`/musica desaprovadas` do ERIS).
+- `GET /perfil/artistas` (novo, 2026-09-26) - `{"artistas": [...]}`, nota,
+  contagem de votos, estado (`normal`/`em_prova`/`rejeitado`) e faixas de
+  prova pendentes de cada artista, maior nota primeiro (`artistas.resumo`).
+- `GET /artista?nome=` (novo, 2026-09-26) - `{"nome", "nota", "estado",
+  "curtidas", "descurtidas", "populares": [{"titulo", "artista",
+  "popularidade"}]}` (`artistas.detalhes`). Tela do artista do SIREN.
+- `GET /faixa/info?artista=&titulo=` (novo, 2026-09-26, sem
+  `discord_user_id`) - `{"album", "duracao"}` (segundos) pelo Last.fm
+  `track.getInfo`, cache de 30 dias por faixa em memória do módulo, 2ª
+  tentativa com título limpo. Colunas "Álbum"/"Duração" do SIREN.
 - `GET /perfil/voto?titulo=&artista=` (novo, 2026-08-27) -
   `{"voto": "positivo"|"negativo"|null}` - se essa faixa já foi avaliada
   antes por essa pessoa (`historico.obter_voto`). Usado pelo ERIS pra
@@ -237,7 +247,10 @@ formato do parâmetro importa.
   dict de diversidade, ver `recomendador.py` acima.
 - `POST /radar/semente` `{"excluir", "penalidades_sessao"}` - sugestão de
   PARTIDA sem faixa atual pra semear (`/caos` do ERIS, ver seção abaixo).
-- `POST /radar/feedback_ao_vivo` `{"artista", "titulo", "feedback"}` -
+- `POST /radar/feedback_ao_vivo` `{"artista", "titulo", "feedback", "abrir_prova"?}` -
+  `abrir_prova` (opcional, padrão `true`, 2026-09-26): `false` só ajusta a
+  nota do artista, sem abrir a regra das 5 chances - usado na importação de
+  votos antigos pelo SIREN.
   botões 👍/👎 na mensagem de "tocando agora" do Modo Música (ERIS,
   2026-08-26). Diferente de `/radar/feedback`, não exige `track_id`
   pré-existente (a faixa pode nunca ter passado pelo Radar) - cria a
@@ -415,10 +428,35 @@ reduzido separadamente (`max_artistas=1, max_generos=3, limite_geral=15`
 dentro de `continuacao.py`, não mais em `api_bridge.py::_coletar_
 candidatos`, que agora só serve o Radar semanal).
 
+## Pontuação por artista e regra das 5 chances (`artistas.py`, 2026-09-26)
+
+Pedido do usuário: "cada artista ter uma pontuação, e cada curtida influenciar nela. Mas ao mesmo tempo não quero matar um artista completamente após 1 deslike, se eu não curtir uma música dele, você ainda pode mandar as 5 músicas mais populares dele, se eu não curtir nenhuma, aí você não o recomenda mais".
+
+Antes disso, uma curtida só tirava a faixa do pool e dava um ajuste pequeno no peso do gênero principal. O bônus forte de afinidade (+0,4) valia só para artistas favoritos cadastrados, e a afinidade gravada no pool nunca mudava depois que a faixa entrava. Uma curtida de hoje quase não mudava o que tocava hoje.
+
+**Nota.** Cada artista tem, por pessoa, uma nota de -1 a +1, começando em 0. Curtida: `nota += 0.25 * (1 - nota)`, com retorno decrescente. Descurtida: `nota -= 0.2`, com piso em -0,8 (-1 é exclusivo da rejeição). Sem registro, favorito cadastrado vale 1,0 e o resto vale 0.
+
+**Onde a nota entra.**
+
+- Ranking (`recomendador._compatibilidade`): `+0.4 * nota` quando positiva e `-0.3 * |nota|` quando negativa. Favorito sem voto mantém exatamente o +0,4 de antes.
+- Sorteio do pool (`pool.consumir_proxima`): `+0.25 * nota` na ordenação, calculado na hora. É isso que faz uma curtida valer já na próxima sugestão, sem regravar o pool.
+
+**Estados.**
+
+1. `normal`: recomendado conforme a nota.
+2. `em_prova`: aberto por uma descurtida quando o artista tem zero curtidas e não é favorito. O ECHO busca as faixas mais populares dele (`provedor.obter_faixas_do_artista`, Last.fm `artist.gettoptracks`) e separa as 5 primeiras que ainda não foram curtidas nem são a faixa que acabou de levar descurtida. As que já tinham descurtida contam como chance gasta. Sem provedor disponível, a prova não abre e é tentada de novo na próxima descurtida.
+3. `rejeitado`: todas as faixas da prova levaram descurtida. Nota vai a -1 e o artista sai do pool, do ranking e das aprovadas sorteadas na camada 2. É permanente (decisão do usuário), mas uma curtida numa música dele (por exemplo, achada na busca) o devolve a `normal`.
+
+**Como as faixas de prova são servidas.** `artistas.proxima_faixa_de_prova` roda antes das camadas de `continuacao.sugerir_proxima`/`sugerir_semente`. Um contador por pessoa faz entrar uma faixa de prova a cada `INTERVALO_PROVA` (5) sugestões, a menos servida primeiro. Só descurtida explícita gasta chance (decisão do usuário: pular ou ouvir sem votar não conta). Uma faixa servida `MAX_VEZES_SERVIDA` (2) vezes deixa de ser servida, mas ainda aceita descurtida, porque pode estar tocando naquele momento. No ciclo seguinte, se só sobrarem faixas assim, a prova termina sem rejeitar. Sem esse limite, uma faixa que a pessoa só ouve sem votar voltaria para sempre.
+
+**Notas iniciais.** A primeira leitura de cada pessoa reconstrói as notas a partir dos votos que já existem no histórico, na ordem em que aconteceram, sem abrir prova. `feedback.py` carrega as notas antes de gravar o voto no histórico; sem isso, a reconstrução do primeiro voto já incluiria o próprio voto, e ele contaria duas vezes (achado nos testes).
+
+**Diversidade na sessão.** O desconto por artista repetido subiu de 0,15 para 0,25 no mesmo dia. Com a fila do Caos do SIREN encadeando pedidos (cada sugestão semeada pela anterior), o bônus de "mesmo artista da faixa atual" (+0,3) vencia o desconto até a terceira repetição. Com 0,25, a terceira seguida já sai atrás de outras opções.
+
 ## Persistência (`data/`, gitignored)
 
 `perfil.json`, `historico_recomendacoes.json`, `eventos_escuta.json`,
-`radar_estado.json`, `pool_musical.json` - todos no formato `{discord_user_id:
+`radar_estado.json`, `pool_musical.json`, `artistas.json` (2026-09-26) - todos no formato `{discord_user_id:
 {...}}` desde 2026-08-26 (migração one-shot do formato antigo na primeira
 carga, ver `DONO_DISCORD_ID_MIGRACAO`). Lidos do disco a cada chamada (nunca
 cacheados em memória entre requests), mesmo padrão já usado no HESTIA/MOIRAI

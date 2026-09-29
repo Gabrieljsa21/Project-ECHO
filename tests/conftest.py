@@ -9,6 +9,7 @@ from echo.core import perfil as perfil_mod
 from echo.core import historico as historico_mod
 from echo.core import radar as radar_mod
 from echo.core import pool as pool_mod
+from echo.core import artistas as artistas_mod
 
 
 @pytest.fixture(autouse=True)
@@ -18,4 +19,5 @@ def isolar_persistencia(tmp_path, monkeypatch):
     monkeypatch.setattr(historico_mod, "ARQUIVO_EVENTOS_ESCUTA", str(tmp_path / "eventos_escuta.json"))
     monkeypatch.setattr(radar_mod, "ARQUIVO_ESTADO_RADAR", str(tmp_path / "radar_estado.json"))
     monkeypatch.setattr(pool_mod, "ARQUIVO_POOL", str(tmp_path / "pool_musical.json"))
+    monkeypatch.setattr(artistas_mod, "ARQUIVO_ARTISTAS", str(tmp_path / "artistas.json"))
     yield
