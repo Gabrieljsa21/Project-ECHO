@@ -18,6 +18,15 @@ def test_gerar_pool_incremental_adiciona_candidatos_novos():
     assert pool[0]["afinidade"] == 0.7
 
 
+def test_consumir_proxima_ignora_faixa_ja_votada_que_ficou_no_pool():
+    """Faixa que entrou no pool enquanto o voto estava "esquecido" (bug de
+    2026-10-05) nunca toca pelo pool."""
+    pool_mod.gerar_pool_incremental(USUARIO, [_candidato("Song A", "Artista A", ["pop"], 0.7)])
+    historico_mod.registrar_recomendacao(USUARIO, "Song A", "Artista A", reason="pool", category=None)
+    historico_mod.registrar_feedback(USUARIO, historico_mod.track_id("Song A", "Artista A"), "positivo")
+    assert pool_mod.consumir_proxima(USUARIO) is None
+
+
 def test_gerar_pool_incremental_nunca_recria_do_zero():
     """Chamadas sucessivas se FUNDEM - uma rodada nova não pode apagar quem já
     estava lá e ainda não foi consumido."""

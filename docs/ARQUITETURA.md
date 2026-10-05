@@ -278,7 +278,12 @@ rede no caminho crítico** entre uma faixa acabar e a próxima começar.
   `gerar_pool_incremental` funde com o pool existente: atualiza score de quem
   já estava lá, adiciona os novos, remove quem já foi VOTADA
   (`historico.foi_votada`) ou não coube no `TAMANHO_ALVO` (mantém só os de
-  maior afinidade).
+  maior afinidade). `consumir_proxima` também pula faixa votada que ainda
+  esteja no pool.
+- **Voto vence aparição** (2026-10-05) - a mesma faixa aparece várias vezes
+  no histórico (cada vez que o pool a toca). O voto vigente é o da entrada
+  mais recente COM voto (`historico._mais_recentes_por_track`); antes, a
+  aparição nova sem voto apagava o 👍/👎 e a faixa voltava pro Caos.
 - **Reaproveita a descoberta semanal do Radar** - `radar.gerar_radar` chama
   `gerar_pool_incremental` logo depois de ranquear, com a lista COMPLETA
   (antes da curadoria de diversidade da edição fechada) - o pool nunca

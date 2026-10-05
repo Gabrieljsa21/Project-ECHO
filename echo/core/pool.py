@@ -189,9 +189,15 @@ def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excl
     excluidos_normalizados = {e.lower() for e in (excluidos_sessao or [])}
     artistas = artistas_mod.carregar(discord_user_id)
     perfil = perfil_mod.carregar_perfil(discord_user_id)
+    # Faixa já votada nunca toca pelo pool, mesmo que tenha entrado nele
+    # antes do voto valer (ver `historico._mais_recentes_por_track`).
+    ids_votados = {
+        e["track_id"] for e in historico_mod.obter_aprovadas(discord_user_id) + historico_mod.obter_desaprovadas(discord_user_id)
+    }
     candidatos_validos = [
         c for c in pool
         if _id_candidato(c) not in excluidos_normalizados
+        and _id_candidato(c) not in ids_votados
         and not artistas_mod.esta_rejeitado(discord_user_id, c["artista"], artistas)
     ]
 

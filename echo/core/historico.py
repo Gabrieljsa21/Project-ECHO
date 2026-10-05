@@ -87,11 +87,20 @@ def obter_historico(discord_user_id, limite=20):
 
 
 def _mais_recentes_por_track(entradas):
-    """Uma entrada por `track_id`, mantendo a MAIS RECENTE (histórico já vem em
-    ordem cronológica de inserção - a última aparição de cada track_id vence)."""
+    """Uma entrada por `track_id`: a MAIS RECENTE COM VOTO, ou a mais recente
+    de todas se a faixa nunca foi votada (histórico já vem em ordem
+    cronológica de inserção).
+
+    🔥 Voto vence aparição (2026-10-05, achado real: "Counting Stars",
+    curtida em 08/26, voltou 9x no Caos do SIREN). Antes a última APARIÇÃO
+    vencia, então cada vez que o pool tocava de novo uma faixa curtida,
+    a entrada nova (sem voto) apagava o 👍 - `foi_votada` virava False, a
+    faixa voltava pro pool e saía das aprovadas. Mesmo efeito com 👎."""
     por_track = {}
     for entrada in entradas:
-        por_track[entrada["track_id"]] = entrada
+        anterior = por_track.get(entrada["track_id"])
+        if anterior is None or entrada.get("user_feedback") or not anterior.get("user_feedback"):
+            por_track[entrada["track_id"]] = entrada
     return list(por_track.values())
 
 

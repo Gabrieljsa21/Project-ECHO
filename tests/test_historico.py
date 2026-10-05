@@ -65,6 +65,19 @@ def test_obter_voto_devolve_o_mais_recente():
     assert historico_mod.obter_voto(USUARIO, "Song A", "Artista A") == "negativo"
 
 
+def test_voto_sobrevive_a_nova_recomendacao_sem_voto():
+    """Faixa curtida que o pool toca de novo (entrada nova, sem voto) continua
+    curtida - antes a aparição nova apagava o voto e ela voltava pro Caos."""
+    track_id = historico_mod.track_id("Song A", "Artista A")
+    historico_mod.registrar_recomendacao(USUARIO, "Song A", "Artista A", reason="pool", category=None)
+    historico_mod.registrar_feedback(USUARIO, track_id, "positivo")
+    historico_mod.registrar_recomendacao(USUARIO, "Song A", "Artista A", reason="pool", category=None)
+
+    assert historico_mod.foi_votada(USUARIO, "Song A", "Artista A")
+    assert historico_mod.obter_voto(USUARIO, "Song A", "Artista A") == "positivo"
+    assert [e["track_id"] for e in historico_mod.obter_aprovadas(USUARIO)] == [track_id]
+
+
 def test_historico_isolado_por_pessoa():
     historico_mod.registrar_recomendacao(USUARIO, "Song A", "Artista A", reason="compatibilidade", category="compatibilidade")
     assert historico_mod.foi_recomendada_recentemente(USUARIO, "Song A", "Artista A")
