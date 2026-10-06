@@ -193,3 +193,41 @@ def test_terceira_repeticao_seguida_do_mesmo_artista_perde_para_outros():
     ])
     escolhida = pool_mod.consumir_proxima(USUARIO, seed_artista="Agro", penalidades_sessao={"artista::agro": 2})
     assert escolhida["artista"] != "Agro"
+
+
+class _ProvedorReabastecimento:
+    def __init__(self, faixas_por_artista, similares):
+        self._faixas = faixas_por_artista
+        self._similares = similares
+
+    def obter_artistas_similares(self, nome, limite=10):
+        return self._similares.get(nome.lower(), [])
+
+    def obter_faixas_do_artista(self, nome, limite=10):
+        return [
+            {"titulo": t, "artista": nome, "generos": ["pop"], "popularidade": 60}
+            for t in self._faixas.get(nome.lower(), [])
+        ]
+
+
+def test_reabastecer_busca_artistas_parecidos_e_limpa_votadas(monkeypatch):
+    """2026-10-06: as top faixas do artista curtido já estavam todas votadas
+    ("600 analisadas, 0 adicionadas"); os parecidos trazem faixa nova. Faixa
+    votada que estava no pool sai, e variante ao vivo dela não entra."""
+    historico_mod.registrar_recomendacao(USUARIO, "Hit", "Curtido", reason="pool", category=None)
+    historico_mod.registrar_feedback(USUARIO, historico_mod.track_id("Hit", "Curtido"), "positivo")
+    pool_mod.gerar_pool_incremental(USUARIO, [_candidato("Velha", "Outro", ["pop"], 0.5)])
+    historico_mod.registrar_recomendacao(USUARIO, "Velha", "Outro", reason="pool", category=None)
+    historico_mod.registrar_feedback(USUARIO, historico_mod.track_id("Velha", "Outro"), "negativo")
+
+    provedor = _ProvedorReabastecimento(
+        faixas_por_artista={"curtido": ["Hit", "Hit - Ao Vivo"], "parecido": [f"Nova {i}" for i in range(6)]},
+        similares={"curtido": ["Parecido"]},
+    )
+    monkeypatch.setattr(pool_mod, "obter_provedor", lambda: provedor)
+    pool_mod.reabastecer_pool(USUARIO)
+
+    titulos = {c["titulo"] for c in pool_mod.carregar_pool(USUARIO)}
+    assert "Velha" not in titulos
+    assert "Hit - Ao Vivo" not in titulos
+    assert len([t for t in titulos if t.startswith("Nova")]) == pool_mod.MAXIMO_POR_ARTISTA_REABASTECIMENTO

@@ -9,6 +9,7 @@ função de consulta/escrita exige isso como parâmetro (mesmo motivo de
 `perfil.py`: Modo Música é social, feedback de um visitante não pode contar
 como se fosse do dono)."""
 import os
+import re
 import json
 from datetime import date, timedelta
 
@@ -107,6 +108,25 @@ def _mais_recentes_por_track(entradas):
 def obter_aprovadas(discord_user_id):
     entradas = _mais_recentes_por_track(_do_usuario(carregar_historico(), discord_user_id))
     return [e for e in entradas if e.get("user_feedback") == "positivo"]
+
+
+def chave_frouxa(titulo, artista):
+    """Mesma música escrita de jeitos diferentes ("À Sua Maneira", "À sua
+    maneira (De música ligeira) - Ao Vivo", "Song - feat. X") vira uma chave
+    só: sem parênteses/colchetes, sem o trecho depois de " - " ou "feat." e
+    sem pontuação. Mesma regra do `chave_repeticao` do SIREN."""
+    titulo = re.sub(r"[\(\[].*?[\)\]]", " ", titulo.lower())
+    titulo = re.split(r"\s-\s|\bfeat\.?\b|\bft\.?\b", titulo)[0]
+    artista_limpo = re.sub(r"[^\w]+", "", artista.lower())
+    titulo_limpo = re.sub(r"[^\w]+", "", titulo)
+    return f"{artista_limpo}::{titulo_limpo}"
+
+
+def chaves_frouxas_votadas(discord_user_id):
+    """Chaves frouxas de toda faixa com 👍 ou 👎 vigente - variante ao vivo/
+    remix de uma música já votada também conta como conhecida."""
+    entradas = _mais_recentes_por_track(_do_usuario(carregar_historico(), discord_user_id))
+    return {chave_frouxa(e["titulo"], e["artista"]) for e in entradas if e.get("user_feedback") in ("positivo", "negativo")}
 
 
 def obter_desaprovadas(discord_user_id):

@@ -27,6 +27,10 @@ class ProvedorMusical:
     def obter_faixas_por_tag(self, tag, limite=10):
         raise NotImplementedError
 
+    def obter_artistas_similares(self, nome, limite=10):
+        """Nomes de artistas parecidos com `nome`, mais parecido primeiro."""
+        raise ProvedorIndisponivel("não implementado neste provedor")
+
     def obter_lancamentos_novos(self, limite=20):
         raise NotImplementedError
 

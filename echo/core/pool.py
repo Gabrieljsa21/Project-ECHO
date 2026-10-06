@@ -40,9 +40,11 @@ TAMANHO_ALVO = 200
 # Camada 1 (pool) cedo demais numa sessão longa e ficar preso na Camada 2
 # (aprovadas) até a próxima geração semanal do Radar - ver `continuacao.py`.
 MINIMO_DISPONIVEL = 20
-META_REABASTECIMENTO = 30
+META_REABASTECIMENTO = 50
 LIMITE_SEMENTES_APROVADAS = 40
 LIMITE_FAIXAS_POR_SEMENTE = 15
+LIMITE_SIMILARES_POR_SEMENTE = 5
+MAXIMO_POR_ARTISTA_REABASTECIMENTO = 3
 
 # 🔥 O ECHO é um `HTTPServer` de thread ÚNICA (`api_bridge.py`) - "não
 # bloquear nem interromper a reprodução" aqui significa literalmente não
@@ -191,13 +193,11 @@ def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excl
     perfil = perfil_mod.carregar_perfil(discord_user_id)
     # Faixa já votada nunca toca pelo pool, mesmo que tenha entrado nele
     # antes do voto valer (ver `historico._mais_recentes_por_track`).
-    ids_votados = {
-        e["track_id"] for e in historico_mod.obter_aprovadas(discord_user_id) + historico_mod.obter_desaprovadas(discord_user_id)
-    }
+    votadas = historico_mod.chaves_frouxas_votadas(discord_user_id)
     candidatos_validos = [
         c for c in pool
         if _id_candidato(c) not in excluidos_normalizados
-        and _id_candidato(c) not in ids_votados
+        and historico_mod.chave_frouxa(c["titulo"], c["artista"]) not in votadas
         and not artistas_mod.esta_rejeitado(discord_user_id, c["artista"], artistas)
     ]
 
@@ -216,6 +216,7 @@ def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excl
         reverse=True,
     )
     escolhida = random.choice(candidatos_ordenados[:TAMANHO_TOPO_SORTEIO])
+    print(f" [ECHO] Pool -> {escolhida['artista']} - {escolhida['titulo']} ({len(candidatos_validos)} disponíveis de {len(pool)} no pool)")
     historico_mod.registrar_recomendacao(discord_user_id, escolhida["titulo"], escolhida["artista"], reason="pool", category=escolhida.get("origem"))
     return escolhida
 
@@ -288,6 +289,20 @@ def _sementes_das_aprovadas(discord_user_id):
     return sementes[:LIMITE_SEMENTES_APROVADAS]
 
 
+def _artistas_para_buscar(provedor, sementes):
+    """Para cada artista curtido, primeiro os PARECIDOS com ele (Last.fm
+    `artist.getsimilar`), depois ele mesmo. Achado real (2026-10-06): buscar
+    só as top faixas dos artistas curtidos dava "600 analisadas, 600
+    descartadas, 0 adicionadas" - todas já votadas - e o Caos secava."""
+    for semente in sementes:
+        try:
+            similares = provedor.obter_artistas_similares(semente, limite=LIMITE_SIMILARES_POR_SEMENTE)
+        except ProvedorIndisponivel:
+            similares = []
+        yield from similares
+        yield semente
+
+
 def _id_dedup_descoberta(candidato):
     """ID da plataforma quando o provedor der um (Last.fm: `url_lastfm`,
     único por faixa) - fallback pra título normalizado + artista quando não
@@ -321,18 +336,32 @@ def reabastecer_pool(discord_user_id, excluidos_sessao=None, meta=META_REABASTEC
         print(f" [ECHO] Reabastecimento abortado (usuário {discord_user_id}) - ainda sem nenhuma música aprovada pra servir de semente.")
         return
 
+    votadas = historico_mod.chaves_frouxas_votadas(discord_user_id)
+    with _lock_arquivo:
+        pool_atual = carregar_pool(discord_user_id)
+        pool_limpo = [c for c in pool_atual if historico_mod.chave_frouxa(c["titulo"], c["artista"]) not in votadas]
+        if len(pool_limpo) != len(pool_atual):
+            _salvar_pool(discord_user_id, pool_limpo)
+            print(f" [ECHO] Pool: {len(pool_atual) - len(pool_limpo)} faixas já votadas removidas.")
+
     excluidos_sessao_normalizados = {e.lower() for e in (excluidos_sessao or [])}
-    ids_no_pool = {_id_candidato(c) for c in carregar_pool(discord_user_id)}
+    conhecidas = votadas | {historico_mod.chave_frouxa(c["titulo"], c["artista"]) for c in pool_limpo}
     ids_ja_vistos_na_rodada = set()  # dedup entre sementes (2 artistas podem devolver a mesma faixa em feat.)
+    artistas = artistas_mod.carregar(discord_user_id)
     perfil = perfil_mod.carregar_perfil(discord_user_id)
 
     analisadas = 0
     descartadas = 0
     adicionadas = 0
+    artistas_buscados = set()
 
-    for artista in sementes:
+    for artista in _artistas_para_buscar(provedor, sementes):
         if adicionadas >= meta:
             break
+        chave_artista = artista.strip().lower()
+        if chave_artista in artistas_buscados or artistas_mod.esta_rejeitado(discord_user_id, artista, artistas):
+            continue
+        artistas_buscados.add(chave_artista)
         try:
             candidatos_brutos = provedor.obter_faixas_do_artista(artista, limite=LIMITE_FAIXAS_POR_SEMENTE)
         except ProvedorIndisponivel:
@@ -342,27 +371,29 @@ def reabastecer_pool(discord_user_id, excluidos_sessao=None, meta=META_REABASTEC
         for candidato in candidatos_brutos:
             analisadas += 1
             id_dedup = _id_dedup_descoberta(candidato)
-            id_pool = _id_candidato(candidato)
+            chave = historico_mod.chave_frouxa(candidato["titulo"], candidato["artista"])
             ja_conhecida = (
                 id_dedup in ids_ja_vistos_na_rodada
-                or id_pool in ids_no_pool
-                or id_pool in excluidos_sessao_normalizados
-                or historico_mod.foi_votada(discord_user_id, candidato["titulo"], candidato["artista"])
+                or chave in conhecidas
+                or _id_candidato(candidato) in excluidos_sessao_normalizados
             )
             if ja_conhecida:
                 descartadas += 1
                 continue
             novos_validos.append(candidato)
             ids_ja_vistos_na_rodada.add(id_dedup)
+            conhecidas.add(chave)
 
         if not novos_validos:
             continue
 
         # 🔥 Prioriza faixas ainda não avaliadas (pedido explícito) - o
-        # próprio ranqueamento já embute isso: `historico.foi_votada` acima
-        # já tirou as avaliadas, `ranquear` só ordena por afinidade entre o
-        # que sobrou, mesmo motor determinístico do Radar/pool normal.
-        ranqueados = recomendador_mod.ranquear(discord_user_id, novos_validos, perfil)
+        # próprio ranqueamento já embute isso: as votadas já saíram acima,
+        # `ranquear` só ordena por afinidade entre o que sobrou, mesmo motor
+        # determinístico do Radar/pool normal. No máximo
+        # `MAXIMO_POR_ARTISTA_REABASTECIMENTO` por artista, pra o pool não
+        # virar um artista só.
+        ranqueados = recomendador_mod.ranquear(discord_user_id, novos_validos, perfil)[:MAXIMO_POR_ARTISTA_REABASTECIMENTO]
         if not ranqueados:
             descartadas += len(novos_validos)
             continue
@@ -372,8 +403,7 @@ def reabastecer_pool(discord_user_id, excluidos_sessao=None, meta=META_REABASTEC
             for candidato in ranqueados:
                 if adicionadas >= meta:
                     break
-                chave = _id_candidato(candidato)
-                pool_atual[chave] = {
+                pool_atual[_id_candidato(candidato)] = {
                     "titulo": candidato["titulo"],
                     "artista": candidato["artista"],
                     "generos": candidato.get("generos", []),
@@ -382,7 +412,6 @@ def reabastecer_pool(discord_user_id, excluidos_sessao=None, meta=META_REABASTEC
                     "artista_semente": artista,
                     "descoberto_em": date.today().isoformat(),
                 }
-                ids_no_pool.add(chave)
                 adicionadas += 1
             candidatos_finais = sorted(pool_atual.values(), key=lambda c: c["afinidade"], reverse=True)[:TAMANHO_ALVO]
             _salvar_pool(discord_user_id, candidatos_finais)
