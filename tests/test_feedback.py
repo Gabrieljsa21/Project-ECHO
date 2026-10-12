@@ -202,3 +202,53 @@ def test_feedback_passivo_sem_genero_resolvido_nao_ajusta_mesmo_com_padrao():
             USUARIO, provedor, f"Song {i}", "Artista A", fracao_tocada=0.1, pulado=True, momento_do_skip=3,
         )
     assert resultado == {"ajustou_peso": False}
+
+
+def test_trocar_voto_desfaz_o_anterior():
+    """Pedido do usuário 2026-10-12: trocar 👍 por 👎 no SIREN. O ajuste de
+    gênero e a nota do artista do 👍 saem antes do 👎 entrar."""
+    from echo.core import artistas as artistas_mod
+    provedor = _ProvedorFalso(generos_por_artista={"mf doom": ["boom bap"]})
+    feedback_mod.processar_feedback_ao_vivo(USUARIO, provedor, "Doomsday", "MF DOOM", "positivo", abrir_prova=False)
+    feedback_mod.processar_feedback_ao_vivo(USUARIO, provedor, "Doomsday", "MF DOOM", "negativo", abrir_prova=False)
+
+    perfil = perfil_mod.carregar_perfil(USUARIO)
+    assert abs(perfil["preferred_genres"]["boom bap"] - (0.5 + feedback_mod.AJUSTE_NEGATIVO)) < 1e-9
+    registro = artistas_mod.carregar(USUARIO)["mf doom"]
+    assert (registro["curtidas"], registro["descurtidas"]) == (0, 1)
+    assert abs(registro["nota"] + artistas_mod.PASSO_DESCURTIDA) < 1e-9
+
+
+def test_repetir_o_mesmo_voto_nao_conta_duas_vezes():
+    provedor = _ProvedorFalso(generos_por_artista={"mf doom": ["boom bap"]})
+    feedback_mod.processar_feedback_ao_vivo(USUARIO, provedor, "Doomsday", "MF DOOM", "positivo")
+    feedback_mod.processar_feedback_ao_vivo(USUARIO, provedor, "Doomsday", "MF DOOM", "positivo")
+
+    perfil = perfil_mod.carregar_perfil(USUARIO)
+    assert perfil["preferred_genres"]["boom bap"] == 0.5 + feedback_mod.AJUSTE_POSITIVO
+
+
+def test_remover_voto_volta_a_faixa_para_sem_voto():
+    """Clicar de novo no 👍 já marcado (SIREN, 2026-10-12)."""
+    from echo.core import artistas as artistas_mod
+    provedor = _ProvedorFalso(generos_por_artista={"mf doom": ["boom bap"]})
+    feedback_mod.processar_feedback_ao_vivo(USUARIO, provedor, "Doomsday", "MF DOOM", "positivo")
+
+    assert feedback_mod.remover_voto_ao_vivo(USUARIO, provedor, "Doomsday", "MF DOOM") == "positivo"
+
+    assert historico_mod.obter_voto(USUARIO, "Doomsday", "MF DOOM") is None
+    assert abs(perfil_mod.carregar_perfil(USUARIO)["preferred_genres"]["boom bap"] - 0.5) < 1e-9
+    registro = artistas_mod.carregar(USUARIO)["mf doom"]
+    assert registro["curtidas"] == 0 and abs(registro["nota"]) < 1e-9
+    assert feedback_mod.remover_voto_ao_vivo(USUARIO, None, "Doomsday", "MF DOOM") is None
+
+
+def test_remover_voto_limpa_aparicoes_antigas():
+    """Com "voto vence aparição" o voto de uma aparição antiga ainda valeria."""
+    provedor = _ProvedorFalso()
+    feedback_mod.processar_feedback_ao_vivo(USUARIO, provedor, "Doomsday", "MF DOOM", "negativo", abrir_prova=False)
+    historico_mod.registrar_recomendacao(USUARIO, "Doomsday", "MF DOOM", reason="modo_musica", category=None)
+
+    feedback_mod.remover_voto_ao_vivo(USUARIO, provedor, "Doomsday", "MF DOOM")
+
+    assert historico_mod.obter_voto(USUARIO, "Doomsday", "MF DOOM") is None

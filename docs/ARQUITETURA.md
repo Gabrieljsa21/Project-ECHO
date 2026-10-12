@@ -247,7 +247,13 @@ formato do parâmetro importa.
   dict de diversidade, ver `recomendador.py` acima.
 - `POST /radar/semente` `{"excluir", "penalidades_sessao"}` - sugestão de
   PARTIDA sem faixa atual pra semear (`/caos` do ERIS, ver seção abaixo).
+- `POST /radar/remover_voto` `{"artista", "titulo"}` (2026-10-12) - tira o
+  voto da faixa (clicar de novo no 👍/👎 já marcado no SIREN): limpa o voto
+  de todas as aparições no histórico, desfaz o ajuste de gênero e a nota do
+  artista. Responde `{"removido": "positivo"|"negativo"|null}`.
 - `POST /radar/feedback_ao_vivo` `{"artista", "titulo", "feedback", "abrir_prova"?}` -
+  trocar de voto desfaz o anterior antes de aplicar o novo, e repetir o
+  mesmo voto não conta 2x (2026-10-12).
   `abrir_prova` (opcional, padrão `true`, 2026-09-26): `false` só ajusta a
   nota do artista, sem abrir a regra das 5 chances - usado na importação de
   votos antigos pelo SIREN.

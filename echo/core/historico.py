@@ -83,6 +83,23 @@ def registrar_feedback(discord_user_id, track_id_alvo, feedback):
     return None
 
 
+def limpar_feedback(discord_user_id, track_id_alvo):
+    """Tira o voto de TODAS as aparições desse track_id para essa pessoa
+    (voto retirado ou trocado no SIREN, 2026-10-12). Todas, não só a mais
+    recente: com "voto vence aparição" uma entrada antiga ainda valeria.
+    Devolve quantas entradas tinham voto."""
+    discord_user_id = str(discord_user_id)
+    historico = carregar_historico()
+    limpas = 0
+    for entrada in historico:
+        if entrada.get("discord_user_id") == discord_user_id and entrada["track_id"] == track_id_alvo and entrada.get("user_feedback"):
+            entrada["user_feedback"] = None
+            limpas += 1
+    if limpas:
+        _salvar_historico(historico)
+    return limpas
+
+
 def obter_historico(discord_user_id, limite=20):
     return list(reversed(_do_usuario(carregar_historico(), discord_user_id)))[:limite]
 
