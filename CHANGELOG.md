@@ -4,6 +4,8 @@ Este arquivo registra as mudanças importantes do projeto. O formato segue o [Ke
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-14
+
 ### Adicionado
 
 - **Pontuação por artista e regra das 5 chances (2026-09-26)** - cada artista ganha, por pessoa, uma nota de -1 a +1 (`echo/core/artistas.py`, arquivo `data/artistas.json`). Uma curtida sobe a nota com retorno decrescente e uma descurtida desce um passo fixo, sem nunca chegar a -1 sozinha. A nota entra no ranking no lugar do bônus fixo de artista favorito (favorito sem voto continua com o mesmo bônus) e é aplicada na hora do sorteio do pool, então uma curtida já muda o que toca em seguida. Uma descurtida num artista sem nenhuma curtida (e que não é favorito) o coloca em prova: o ECHO separa as 5 faixas mais populares dele no Last.fm e intercala uma a cada 5 sugestões do Caos/continuação. Só descurtida explícita gasta chance; qualquer curtida encerra a prova. Se as 5 levarem descurtida, o artista é rejeitado de vez e some das recomendações, voltando só se a pessoa curtir uma música dele. As notas iniciais são reconstruídas dos votos já existentes, sem abrir prova retroativamente. Nova rota `GET /perfil/artistas` e novo campo opcional `abrir_prova` em `POST /radar/feedback_ao_vivo` (importação de votos antigos). Vale também para o `/caos` do ERIS, que usa o mesmo motor. Ver `docs/ARQUITETURA.md`.
