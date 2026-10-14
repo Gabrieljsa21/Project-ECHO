@@ -205,6 +205,15 @@ class _API(BaseHTTPRequestHandler):
                 self._responder_json({"entrada": entrada})
             except ProvedorIndisponivel as e:
                 self._responder_json({"erro": str(e), "entrada": None}, status=503)
+        elif caminho == "/radar/remover_voto":
+            # Clicar de novo no 👍/👎 já marcado (SIREN, 2026-10-12): a faixa
+            # volta a não ter voto e o ajuste de gênero/nota é desfeito.
+            try:
+                provedor = obter_provedor()
+            except ProvedorIndisponivel:
+                provedor = None
+            removido = feedback_mod.remover_voto_ao_vivo(discord_user_id, provedor, corpo.get("titulo", ""), corpo.get("artista", ""))
+            self._responder_json({"removido": removido})
         elif caminho == "/radar/feedback_passivo":
             # 🔥 Sinal fraco/acumulativo (2026-08-26) - tempo de escuta medido
             # pelo ERIS. Provedor só entra em uso se o padrão consistente

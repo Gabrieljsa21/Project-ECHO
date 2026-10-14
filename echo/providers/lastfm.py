@@ -163,6 +163,13 @@ class ProvedorLastfm(ProvedorMusical):
         generos = self._resolver_generos_por_artista([nome])
         return [self._normalizar_faixa(f, generos, "artista_favorito") for f in faixas]
 
+    def obter_artistas_similares(self, nome, limite=10):
+        """`artist.getsimilar` - usado pelo reabastecimento do pool pra sair
+        dos artistas já conhecidos (2026-10-06: só as top faixas dos artistas
+        curtidos já estavam todas votadas, "600 analisadas, 0 adicionadas")."""
+        dados = self._get("artist.getsimilar", artist=nome, limit=limite, autocorrect=1)
+        return [a.get("name") for a in dados.get("similarartists", {}).get("artist", []) if a.get("name")]
+
     def obter_faixas_por_tag(self, tag, limite=10):
         """Candidatos por GÊNERO (seção 6.3/6.4 - descoberta/exploração) - o
         gênero já é conhecido de antemão (é o próprio tag pedido), não precisa

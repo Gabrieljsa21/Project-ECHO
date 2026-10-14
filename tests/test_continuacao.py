@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """🔥 Reescrito (2026-08-26) pro `continuacao.py` pool-based: cadeia de fallback
-em camadas por pessoa - pool pessoal → aprovadas dessa pessoa → descoberta
-emergencial síncrona (rede, só quando as duas primeiras falharem)."""
+em camadas por pessoa - pool pessoal → descoberta emergencial síncrona (rede,
+só quando o pool falhar). As aprovadas saíram da cadeia em 2026-10-06."""
 from echo.core import perfil as perfil_mod
 from echo.core import historico as historico_mod
 from echo.core import pool as pool_mod
@@ -72,34 +72,31 @@ def test_sugere_semente_consome_do_pool_sem_tocar_provedor():
     assert semente["titulo"] == "Trending Now"
 
 
-# --- Camada 2: aprovadas dessa pessoa ---
+# --- Nunca cai nas curtidas (2026-10-06) ---
 
-def test_sugere_proxima_cai_pras_aprovadas_quando_pool_vazio():
-    historico_mod.registrar_recomendacao(USUARIO, "Song A", "Artista A", reason="pool", category=None)
-    historico_mod.registrar_feedback(USUARIO, historico_mod.track_id("Song A", "Artista A"), "positivo")
-    proxima = continuacao_mod.sugerir_proxima(USUARIO, _ProvedorQuebrado(), "Outro Artista", "Outra Musica")
-    assert proxima is not None
-    assert proxima["titulo"] == "Song A"
+def _curtir(titulo, artista):
+    historico_mod.registrar_recomendacao(USUARIO, titulo, artista, reason="pool", category=None)
+    historico_mod.registrar_feedback(USUARIO, historico_mod.track_id(titulo, artista), "positivo")
 
 
-def test_sugere_semente_cai_pras_aprovadas_quando_pool_vazio():
-    historico_mod.registrar_recomendacao(USUARIO, "Song A", "Artista A", reason="pool", category=None)
-    historico_mod.registrar_feedback(USUARIO, historico_mod.track_id("Song A", "Artista A"), "positivo")
-    semente = continuacao_mod.sugerir_semente(USUARIO, _ProvedorQuebrado())
-    assert semente is not None
-    assert semente["titulo"] == "Song A"
+def test_pool_vazio_nao_cai_nas_curtidas():
+    _curtir("Song A", "Artista A")
+    assert continuacao_mod.sugerir_proxima(USUARIO, _ProvedorQuebrado(), "Outro Artista", "Outra Musica") is None
+    assert continuacao_mod.sugerir_semente(USUARIO, _ProvedorQuebrado()) is None
 
 
-def test_aprovadas_respeitam_exclusao_de_sessao():
-    historico_mod.registrar_recomendacao(USUARIO, "Song A", "Artista A", reason="pool", category=None)
-    historico_mod.registrar_feedback(USUARIO, historico_mod.track_id("Song A", "Artista A"), "positivo")
-    proxima = continuacao_mod.sugerir_proxima(
-        USUARIO, _ProvedorQuebrado(), "Outro Artista", "Outra Musica", excluidos=["artista a::song a"],
-    )
-    assert proxima is None
+def test_descoberta_emergencial_ignora_curtida_e_variante_ao_vivo():
+    _curtir("Song A", "Artista A")
+    provedor = _ProvedorFalso(lancamentos_novos=[
+        _faixa("Song A", "Artista A", ["pop"], 90),
+        _faixa("Song A - Ao Vivo", "Artista A", ["pop"], 90),
+        _faixa("Song B", "Artista B", ["pop"], 50),
+    ])
+    semente = continuacao_mod.sugerir_semente(USUARIO, provedor)
+    assert semente["titulo"] == "Song B"
 
 
-# --- Camada 3: descoberta emergencial síncrona (pool e aprovadas vazios) ---
+# --- Camada 2: descoberta emergencial síncrona (pool vazio) ---
 
 def test_sugere_proxima_do_mesmo_artista_via_descoberta_emergencial():
     provedor = _ProvedorFalso(

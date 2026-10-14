@@ -9,6 +9,7 @@ função de consulta/escrita exige isso como parâmetro (mesmo motivo de
 `perfil.py`: Modo Música é social, feedback de um visitante não pode contar
 como se fosse do dono)."""
 import os
+import re
 import json
 from datetime import date, timedelta
 
@@ -82,22 +83,67 @@ def registrar_feedback(discord_user_id, track_id_alvo, feedback):
     return None
 
 
+def limpar_feedback(discord_user_id, track_id_alvo):
+    """Tira o voto de TODAS as aparições desse track_id para essa pessoa
+    (voto retirado ou trocado no SIREN, 2026-10-12). Todas, não só a mais
+    recente: com "voto vence aparição" uma entrada antiga ainda valeria.
+    Devolve quantas entradas tinham voto."""
+    discord_user_id = str(discord_user_id)
+    historico = carregar_historico()
+    limpas = 0
+    for entrada in historico:
+        if entrada.get("discord_user_id") == discord_user_id and entrada["track_id"] == track_id_alvo and entrada.get("user_feedback"):
+            entrada["user_feedback"] = None
+            limpas += 1
+    if limpas:
+        _salvar_historico(historico)
+    return limpas
+
+
 def obter_historico(discord_user_id, limite=20):
     return list(reversed(_do_usuario(carregar_historico(), discord_user_id)))[:limite]
 
 
 def _mais_recentes_por_track(entradas):
-    """Uma entrada por `track_id`, mantendo a MAIS RECENTE (histórico já vem em
-    ordem cronológica de inserção - a última aparição de cada track_id vence)."""
+    """Uma entrada por `track_id`: a MAIS RECENTE COM VOTO, ou a mais recente
+    de todas se a faixa nunca foi votada (histórico já vem em ordem
+    cronológica de inserção).
+
+    🔥 Voto vence aparição (2026-10-05, achado real: "Counting Stars",
+    curtida em 08/26, voltou 9x no Caos do SIREN). Antes a última APARIÇÃO
+    vencia, então cada vez que o pool tocava de novo uma faixa curtida,
+    a entrada nova (sem voto) apagava o 👍 - `foi_votada` virava False, a
+    faixa voltava pro pool e saía das aprovadas. Mesmo efeito com 👎."""
     por_track = {}
     for entrada in entradas:
-        por_track[entrada["track_id"]] = entrada
+        anterior = por_track.get(entrada["track_id"])
+        if anterior is None or entrada.get("user_feedback") or not anterior.get("user_feedback"):
+            por_track[entrada["track_id"]] = entrada
     return list(por_track.values())
 
 
 def obter_aprovadas(discord_user_id):
     entradas = _mais_recentes_por_track(_do_usuario(carregar_historico(), discord_user_id))
     return [e for e in entradas if e.get("user_feedback") == "positivo"]
+
+
+def chave_frouxa(titulo, artista):
+    """Mesma música escrita de jeitos diferentes ("À Sua Maneira", "À sua
+    maneira (De música ligeira) - Ao Vivo", "Song - feat. X") vira uma chave
+    só: sem parênteses/colchetes, sem o trecho depois de " - " ou "feat." e
+    sem pontuação. Mesma regra do `chave_repeticao` do SIREN."""
+    titulo = re.sub(r"[\(\[].*?[\)\]]", " ", titulo.lower())
+    titulo = re.split(r"\s-\s|\bfeat\.?\b|\bft\.?\b", titulo)[0]
+    artista_limpo = re.sub(r"[^\w]+", "", artista.lower())
+    titulo_limpo = re.sub(r"[^\w]+", "", titulo)
+    return f"{artista_limpo}::{titulo_limpo}"
+
+
+def chaves_frouxas_votadas(discord_user_id):
+    """Chaves frouxas de toda faixa com 👍 ou 👎 vigente - variante ao vivo/
+    remix de uma música já votada também conta como conhecida."""
+    entradas = _mais_recentes_por_track(_do_usuario(carregar_historico(), discord_user_id))
+    return {chave_frouxa(e["titulo"], e["artista"]) for e in entradas if e.get("user_feedback") in ("positivo", "negativo")}
 
 
 def obter_desaprovadas(discord_user_id):

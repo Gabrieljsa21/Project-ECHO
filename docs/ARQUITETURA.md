@@ -247,7 +247,13 @@ formato do parâmetro importa.
   dict de diversidade, ver `recomendador.py` acima.
 - `POST /radar/semente` `{"excluir", "penalidades_sessao"}` - sugestão de
   PARTIDA sem faixa atual pra semear (`/caos` do ERIS, ver seção abaixo).
+- `POST /radar/remover_voto` `{"artista", "titulo"}` (2026-10-12) - tira o
+  voto da faixa (clicar de novo no 👍/👎 já marcado no SIREN): limpa o voto
+  de todas as aparições no histórico, desfaz o ajuste de gênero e a nota do
+  artista. Responde `{"removido": "positivo"|"negativo"|null}`.
 - `POST /radar/feedback_ao_vivo` `{"artista", "titulo", "feedback", "abrir_prova"?}` -
+  trocar de voto desfaz o anterior antes de aplicar o novo, e repetir o
+  mesmo voto não conta 2x (2026-10-12).
   `abrir_prova` (opcional, padrão `true`, 2026-09-26): `false` só ajusta a
   nota do artista, sem abrir a regra das 5 chances - usado na importação de
   votos antigos pelo SIREN.
@@ -278,7 +284,12 @@ rede no caminho crítico** entre uma faixa acabar e a próxima começar.
   `gerar_pool_incremental` funde com o pool existente: atualiza score de quem
   já estava lá, adiciona os novos, remove quem já foi VOTADA
   (`historico.foi_votada`) ou não coube no `TAMANHO_ALVO` (mantém só os de
-  maior afinidade).
+  maior afinidade). `consumir_proxima` também pula faixa votada que ainda
+  esteja no pool.
+- **Voto vence aparição** (2026-10-05) - a mesma faixa aparece várias vezes
+  no histórico (cada vez que o pool a toca). O voto vigente é o da entrada
+  mais recente COM voto (`historico._mais_recentes_por_track`); antes, a
+  aparição nova sem voto apagava o 👍/👎 e a faixa voltava pro Caos.
 - **Reaproveita a descoberta semanal do Radar** - `radar.gerar_radar` chama
   `gerar_pool_incremental` logo depois de ranquear, com a lista COMPLETA
   (antes da curadoria de diversidade da edição fechada) - o pool nunca
@@ -375,6 +386,27 @@ pool"):
   PRÓXIMA chamada a `consumir_proxima` já enxerga isso e volta a priorizar
   o pool sozinha, sem nenhum estado de sessão pra resetar.
 
+### Reabastecimento por artistas parecidos (2026-10-06)
+
+Achado real (log do ECHO): "600 analisadas, 600 descartadas, 0
+adicionadas" a cada rodada. Buscar só as top faixas dos artistas curtidos
+devolvia músicas que a pessoa já tinha votado, e o Caos do SIREN secava. Mudou:
+
+- `_artistas_para_buscar`: para cada artista curtido, primeiro até
+  `LIMITE_SIMILARES_POR_SEMENTE` (5) artistas parecidos
+  (`provedor.obter_artistas_similares`, Last.fm `artist.getsimilar`),
+  depois o próprio artista. Artista rejeitado (regra das 5 chances) é pulado.
+- No máximo `MAXIMO_POR_ARTISTA_REABASTECIMENTO` (3) faixas por artista por
+  rodada, pra o pool não virar um artista só. `META_REABASTECIMENTO` subiu
+  de 30 para 50.
+- "Já conhecida" usa `historico.chave_frouxa` (sem parênteses, sem trecho
+  depois de " - " ou "feat."): variante ao vivo/remix de música votada
+  também é descartada.
+- Toda rodada começa limpando do pool as faixas já votadas.
+
+Validado contra o Last.fm real: rodada de 20s, 300 analisadas, 50
+adicionadas, de 20 artistas diferentes.
+
 ## Continuação ao vivo (Modo Música do ERIS, 2026-08-25)
 
 Pedido do usuário: "quero q alguem seja meu dj exclusivo... qnd eu pedir uma
@@ -386,9 +418,20 @@ o ECHO nunca sabe o que é YouTube/Discord, só devolve `{"artista",
 "titulo"}`).
 
 🔥 **Reescrito (2026-08-26) pro pool pré-calculado** - fallback em camadas
-(pedido do usuário): **pool pessoal → aprovadas dessa pessoa → descoberta
-emergencial síncrona (rede, só quando as duas primeiras falharem) → None**.
-As camadas 1/2 não fazem chamada de rede nenhuma; a camada 3 (`sugerir_
+(pedido do usuário): **pool pessoal → descoberta emergencial síncrona (rede,
+só quando o pool falhar) → None**.
+
+🔥 **Sem camada de aprovadas (2026-10-06)** - até então havia uma camada
+entre o pool e a descoberta emergencial que sorteava entre as músicas com
+👍. Numa sessão longa do Caos o pool ficava sem faixa livre e o Caos
+passava a tocar curtidas, o que o usuário não quer ("tá tocando uma
+favorita"). Removida; a descoberta emergencial também passou a filtrar
+faixa já votada (`_filtrar_novas`, mesma `chave_frouxa` do pool). Cada
+sugestão vai pro log com a camada de onde veio (`[ECHO] Caos (camada) ->
+Artista - Título`; o pool loga `[ECHO] Pool -> ...` com quantas faixas
+estão disponíveis).
+
+A camada 1 não faz chamada de rede nenhuma; a camada 2 (`sugerir_
 proxima`) trata o artista/gêneros da faixa atual como preferência FORTE só
 pra essa sugestão (perfil efetivo, cópia em memória, nunca persistida) -
 mesmo raciocínio de antes, agora só acionado como último recurso.
@@ -396,7 +439,7 @@ mesmo raciocínio de antes, agora só acionado como último recurso.
 **`/caos` do ERIS (2026-08-26)** - pedido do usuário: "ERIS entra no canal
 de voz do usuário e inicia uma sessão musical contínua... sem exigir
 artista, gênero, música ou qualquer outra referência inicial".
-`sugerir_semente` segue a mesma cadeia de camadas (pool → aprovadas →
+`sugerir_semente` segue a mesma cadeia de camadas (pool →
 `obter_lancamentos_novos` como único fallback de emergência, sem boost
 artificial de perfil). Funciona mesmo com perfil TOTALMENTE vazio - o
 chart global sozinho já supre candidato via relevância/exploração na

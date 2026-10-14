@@ -77,28 +77,65 @@ def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedb
 
     O voto também atualiza a nota do artista (`artistas.py`, 2026-09-26);
     `abrir_prova=False` (importação de votos antigos) só mexe na nota, sem
-    disparar a regra das 5 chances."""
+    disparar a regra das 5 chances.
+
+    Trocar de voto (2026-10-12, pedido do usuário: "o siren tem de permitir
+    ficar trocando o like e dislike") desfaz o voto anterior antes de
+    aplicar o novo, e repetir o mesmo voto não conta 2x."""
     track_id = historico_mod.track_id(titulo, artista)
     artistas_mod.carregar(discord_user_id)  # ver processar_feedback: evita contar este voto 2x
+    anterior = historico_mod.obter_voto(discord_user_id, titulo, artista)
+    if anterior == feedback:
+        return historico_mod.registrar_feedback(discord_user_id, track_id, feedback)
+    generos = _generos_do_artista(provedor, artista)
+    if anterior:
+        _desfazer_voto(discord_user_id, generos, titulo, artista, anterior)
+
     entrada = historico_mod.registrar_feedback(discord_user_id, track_id, feedback)
     if entrada is None:
         historico_mod.registrar_recomendacao(discord_user_id, titulo, artista, reason="modo_musica", category=None)
         entrada = historico_mod.registrar_feedback(discord_user_id, track_id, feedback)
 
-    try:
-        generos = provedor.resolver_generos([artista]).get(artista.strip().lower(), [])
-    except ProvedorIndisponivel:
-        generos = []
     if generos:
-        perfil = perfil_mod.carregar_perfil(discord_user_id)
-        delta = AJUSTE_POSITIVO if feedback == "positivo" else AJUSTE_NEGATIVO
-        perfil_mod.ajustar_peso_genero(perfil, generos[0], delta)
-        perfil_mod.salvar_perfil(discord_user_id, perfil)
+        _ajustar_genero(discord_user_id, generos[0], AJUSTE_POSITIVO if feedback == "positivo" else AJUSTE_NEGATIVO)
 
     pool_mod.remover_track(discord_user_id, titulo, artista)
     artistas_mod.registrar_voto(discord_user_id, titulo, artista, feedback, provedor, abrir_prova=abrir_prova)
 
     return entrada
+
+
+def remover_voto_ao_vivo(discord_user_id, provedor, titulo, artista):
+    """Clicar de novo no 👍/👎 já marcado (SIREN, 2026-10-12): a faixa volta a
+    não ter voto. Desfaz o ajuste de gênero e a nota do artista do voto que
+    existia. Devolve o voto removido (ou None se não havia)."""
+    artistas_mod.carregar(discord_user_id)
+    anterior = historico_mod.obter_voto(discord_user_id, titulo, artista)
+    if anterior:
+        _desfazer_voto(discord_user_id, _generos_do_artista(provedor, artista), titulo, artista, anterior)
+    return anterior
+
+
+def _generos_do_artista(provedor, artista):
+    if provedor is None:
+        return []
+    try:
+        return provedor.resolver_generos([artista]).get(artista.strip().lower(), [])
+    except ProvedorIndisponivel:
+        return []
+
+
+def _ajustar_genero(discord_user_id, genero, delta):
+    perfil = perfil_mod.carregar_perfil(discord_user_id)
+    perfil_mod.ajustar_peso_genero(perfil, genero, delta)
+    perfil_mod.salvar_perfil(discord_user_id, perfil)
+
+
+def _desfazer_voto(discord_user_id, generos, titulo, artista, voto):
+    historico_mod.limpar_feedback(discord_user_id, historico_mod.track_id(titulo, artista))
+    if generos:
+        _ajustar_genero(discord_user_id, generos[0], -(AJUSTE_POSITIVO if voto == "positivo" else AJUSTE_NEGATIVO))
+    artistas_mod.desfazer_voto(discord_user_id, artista, voto)
 
 
 def processar_feedback_passivo(discord_user_id, provedor, titulo, artista, fracao_tocada, pulado, momento_do_skip=None):

@@ -262,6 +262,29 @@ def registrar_voto(discord_user_id, titulo, artista, feedback, provedor=None, ab
         return dict(registro)
 
 
+def desfazer_voto(discord_user_id, artista, feedback):
+    """Inverso de `registrar_voto` (voto retirado ou trocado no SIREN,
+    2026-10-12): devolve a nota ao valor de antes do voto e desconta a
+    contagem. Os limites da nota podem deixar uma pequena diferença. Não
+    mexe no estado de prova: uma prova aberta segue o curso normal."""
+    with _lock:
+        todos = _carregar_todos()
+        usuario = _usuario(todos, discord_user_id)
+        registro = usuario["artistas"].get(_chave(artista))
+        if registro is None:
+            return None
+        if feedback == "positivo" and registro["curtidas"] > 0:
+            registro["nota"] = max(NOTA_MINIMA, (registro["nota"] - FATOR_CURTIDA) / (1 - FATOR_CURTIDA))
+            registro["curtidas"] -= 1
+        elif feedback == "negativo" and registro["descurtidas"] > 0:
+            if registro["estado"] != ESTADO_REJEITADO:
+                registro["nota"] = min(NOTA_MAXIMA, registro["nota"] + PASSO_DESCURTIDA)
+            registro["descurtidas"] -= 1
+        registro["atualizado_em"] = date.today().isoformat()
+        _salvar_todos(todos)
+        return dict(registro)
+
+
 def proxima_faixa_de_prova(discord_user_id, excluidos=None):
     """Chamado a cada sugestão do Caos/continuação. Conta as sugestões e, a
     cada `INTERVALO_PROVA`, devolve uma faixa pendente de algum artista em
