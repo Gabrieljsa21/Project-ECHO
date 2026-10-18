@@ -18,7 +18,7 @@ class ProvedorMusical:
     def esta_configurado(self):
         raise NotImplementedError
 
-    def buscar_faixa(self, query):
+    def buscar_faixa(self, query, resolver_generos=True):
         raise NotImplementedError
 
     def obter_faixas_do_artista(self, nome, limite=10):

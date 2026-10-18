@@ -496,6 +496,26 @@ Antes disso, uma curtida só tirava a faixa do pool e dava um ajuste pequeno no 
 
 **Diversidade na sessão.** O desconto por artista repetido subiu de 0,15 para 0,25 no mesmo dia. Com a fila do Caos do SIREN encadeando pedidos (cada sugestão semeada pela anterior), o bônus de "mesmo artista da faixa atual" (+0,3) vencia o desconto até a terceira repetição. Com 0,25, a terceira seguida já sai atrás de outras opções.
 
+## Versões derivadas trocadas pela oficial (`versoes.py`, 2026-10-17)
+
+Pedido do usuário: "tem como fazer o siren recomendar as musicas oficiais em vez desses nightcore e amv? Msm eu dando varios deslikes seguido, ainda recomenda eles. A black betty msm eu curto, mas tem de ser a certa".
+
+**Causa.** No Last.fm, o canal do YouTube que subiu o nightcore/AMV aparece como "artista" ("BLEACH AMV", "PluggedToNightcore", "HD Nightcore"). Três coisas somavam:
+
+1. Cada canal é um artista diferente, então a descurtida num deles não afetava os outros.
+2. A descurtida num canal sem curtidas abria a regra das 5 chances: o ECHO separava mais 5 faixas daquele canal e as intercalava no Caos. Descurtir trazia mais nightcore.
+3. O reabastecimento de 2026-10-16, semeado por curtidas que ainda eram AMV (trocadas pela oficial em 2026-10-17, só nos dados), colocou 25 faixas de canal no pool.
+
+**Regra.** `versoes.eh_derivada(artista, titulo)` reconhece o canal pelo nome ("amv"/"nightcore" valem como trecho, porque vêm colados, como em "VermillionAMV") e o título por palavra inteira (nightcore, nightstep, AMV, anime MV, sped up, slowed, 8D audio...). Faixa derivada nunca entra no Caos como está:
+
+- `versoes.oficializar` troca cada candidato derivado pela versão oficial: limpa o título (`titulo_limpo`), busca no Last.fm (`track.search`, sem resolver gênero de cada resultado) e aceita o primeiro resultado que não seja derivado, com pelo menos 1.000 ouvintes e o mesmo título (ou o título contido na busca junto com o nome do artista, caso de "Move - Thousand foot krutch"). O texto entre colchetes ("[Pegboard Nerds]") é tentado antes como pista do artista, porque título curto sozinho cai no artista mais ouvido com esse nome. Sem resultado confiável, a faixa sai.
+- Aplicado na coleta do Radar (`api_bridge._coletar_candidatos`), no reabastecimento do pool e na descoberta emergencial do Caos.
+- O reabastecimento não busca top faixas de artista derivado, não usa canal como semente e, na limpeza do pool, troca as derivadas que já estavam lá pela oficial (fora do `_lock_arquivo`, por ser rede), mantendo a afinidade.
+- `pool.consumir_proxima` ignora derivada que tenha sobrado no pool.
+- Canal derivado não entra em prova, e uma prova já aberta para canal não é mais servida.
+
+Limitação conhecida: título de uma palavra só e sem pista ("Impossible", "Runnin") vira a versão mais ouvida no Last.fm, que pode não ser a usada no vídeo. Na validação com o pool real, 19 das 25 viraram oficiais e 6 saíram por falta de resultado confiável.
+
 ## Persistência (`data/`, gitignored)
 
 `perfil.json`, `historico_recomendacoes.json`, `eventos_escuta.json`,

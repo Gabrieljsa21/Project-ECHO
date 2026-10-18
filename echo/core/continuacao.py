@@ -24,6 +24,7 @@ from echo.core import artistas as artistas_mod
 from echo.core import recomendador as recomendador_mod
 from echo.core import historico as historico_mod
 from echo.core import pool as pool_mod
+from echo.core import versoes as versoes_mod
 from echo.providers import ProvedorIndisponivel
 
 LIMITE_DESCOBERTA_EMERGENCIAL = 15
@@ -91,6 +92,7 @@ def sugerir_proxima(discord_user_id, provedor, artista_atual, titulo_atual, excl
             candidatos.extend(provedor.obter_faixas_por_tag(genero, limite=15))
         except ProvedorIndisponivel:
             pass
+    candidatos = versoes_mod.oficializar(provedor, candidatos)
     candidatos_filtrados = _filtrar_novas(discord_user_id, candidatos, excluidos_normalizados)
     if not candidatos_filtrados:
         return _registrar(None, "descoberta emergencial")
@@ -141,6 +143,7 @@ def sugerir_semente(discord_user_id, provedor=None, excluidos=None, penalidades_
         candidatos = list(provedor.obter_lancamentos_novos(LIMITE_DESCOBERTA_EMERGENCIAL))
     except ProvedorIndisponivel:
         return _registrar(None, "provedor indisponível")
+    candidatos = versoes_mod.oficializar(provedor, candidatos)
     candidatos_filtrados = _filtrar_novas(discord_user_id, candidatos, excluidos_normalizados)
     if not candidatos_filtrados:
         return _registrar(None, "descoberta emergencial")

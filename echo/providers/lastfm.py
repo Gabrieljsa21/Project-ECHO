@@ -142,16 +142,19 @@ class ProvedorLastfm(ProvedorMusical):
             "album": None,  # Last.fm não expõe álbum nesses endpoints sem 1 chamada extra por faixa
             "data_lancamento": None,  # Last.fm não tem data de lançamento (é scrobbling, não catálogo)
             "popularidade": _normalizar_popularidade(faixa.get("listeners")),
+            "ouvintes": faixa.get("listeners"),
             "generos": generos_por_artista.get(nome_artista.lower(), []),
             "url_lastfm": faixa.get("url"),
             "fonte": fonte,
         }
 
-    def buscar_faixa(self, query):
+    def buscar_faixa(self, query, resolver_generos=True):
+        """`resolver_generos=False` pula 1 chamada por artista do resultado
+        (busca da versão oficial em `core/versoes.py`, que só usa 1 deles)."""
         dados = self._get("track.search", track=query, limit=20)
         faixas = dados.get("results", {}).get("trackmatches", {}).get("track", [])
         nomes_artistas = [f.get("artist") for f in faixas if isinstance(f.get("artist"), str)]
-        generos = self._resolver_generos_por_artista(nomes_artistas)
+        generos = self._resolver_generos_por_artista(nomes_artistas) if resolver_generos else {}
         return [self._normalizar_faixa(f, generos, "busca") for f in faixas]
 
     def obter_faixas_do_artista(self, nome, limite=10):

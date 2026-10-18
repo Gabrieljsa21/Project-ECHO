@@ -4,6 +4,12 @@ Este arquivo registra as mudanças importantes do projeto. O formato segue o [Ke
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-17
+
+### Corrigido
+
+- **Caos recomendava nightcore e AMV mesmo com descurtidas seguidas (2026-10-17)** - pedido do usuário no SIREN ("tem como fazer o siren recomendar as musicas oficiais em vez desses nightcore e amv?"). No Last.fm, o canal que subiu o vídeo aparece como artista, então cada canal contava como um artista diferente e a descurtida abria a regra das 5 chances, que trazia mais 5 faixas do mesmo canal. Agora o novo `echo/core/versoes.py` reconhece versões derivadas (nightcore, nightstep, AMV, anime MV, sped up, slowed, 8D) e as troca pela versão oficial, buscada pelo título no Last.fm (ex.: "Black Lagoon AMV - black betty" vira "Ram Jam - Black Betty"). Sem uma oficial confiável, a faixa sai. Vale para o Radar, o pool, o reabastecimento e a descoberta emergencial do Caos; o pool deixa de servir derivadas que já estavam nele, e canal derivado não entra mais em prova. O `buscar_faixa` do provedor ganhou `resolver_generos=False` e o campo `ouvintes`. Vale também para o `/caos` do ERIS. Ver `docs/ARQUITETURA.md`.
+
 ## [0.2.0] - 2026-10-14
 
 ### Adicionado

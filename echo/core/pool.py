@@ -26,6 +26,7 @@ from echo.core import artistas as artistas_mod
 from echo.core import historico as historico_mod
 from echo.core import recomendador as recomendador_mod
 from echo.core import perfil as perfil_mod
+from echo.core import versoes as versoes_mod
 from echo.providers import obter_provedor, ProvedorIndisponivel
 
 ARQUIVO_POOL = "data/pool_musical.json"
@@ -199,6 +200,7 @@ def consumir_proxima(discord_user_id, seed_artista=None, seed_generos=None, excl
         if _id_candidato(c) not in excluidos_normalizados
         and historico_mod.chave_frouxa(c["titulo"], c["artista"]) not in votadas
         and not artistas_mod.esta_rejeitado(discord_user_id, c["artista"], artistas)
+        and not versoes_mod.eh_derivada(c["artista"], c["titulo"])
     ]
 
     if len(candidatos_validos) < MINIMO_DISPONIVEL:
@@ -283,7 +285,7 @@ def _sementes_das_aprovadas(discord_user_id):
     for entrada in reversed(aprovadas):
         nome = entrada["artista"].strip()
         chave = nome.lower()
-        if chave and chave not in vistas:
+        if chave and chave not in vistas and not versoes_mod.eh_derivada(nome):
             vistas.add(chave)
             sementes.append(nome)
     return sementes[:LIMITE_SEMENTES_APROVADAS]
@@ -309,6 +311,35 @@ def _id_dedup_descoberta(candidato):
     tiver (pedido explícito do usuário: "Deduplicar por ID da plataforma e,
     como fallback, por título normalizado + artista")."""
     return candidato.get("url_lastfm") or _id_candidato(candidato)
+
+
+def _readicionar_oficiais(discord_user_id, provedor, derivadas, votadas):
+    """Nightcore/AMV que já estava no pool (de antes de `versoes.py`) volta
+    como a versão oficial, com a mesma afinidade. A busca é feita fora do
+    `_lock_arquivo` pra não segurar o pool durante as chamadas de rede."""
+    if not derivadas:
+        return
+    oficiais = [
+        c for c in versoes_mod.oficializar(provedor, derivadas)
+        if historico_mod.chave_frouxa(c["titulo"], c["artista"]) not in votadas
+    ]
+    if not oficiais:
+        return
+    with _lock_arquivo:
+        pool_atual = {_id_candidato(c): c for c in carregar_pool(discord_user_id)}
+        for candidato in oficiais:
+            pool_atual.setdefault(_id_candidato(candidato), {
+                "titulo": candidato["titulo"],
+                "artista": candidato["artista"],
+                "generos": candidato.get("generos", []),
+                "afinidade": candidato["afinidade"],
+                "origem": candidato.get("origem"),
+                "artista_semente": candidato.get("artista_semente"),
+                "descoberto_em": candidato.get("descoberto_em", date.today().isoformat()),
+            })
+        candidatos_finais = sorted(pool_atual.values(), key=lambda c: c["afinidade"], reverse=True)[:TAMANHO_ALVO]
+        _salvar_pool(discord_user_id, candidatos_finais)
+    print(f" [ECHO] Pool: {len(oficiais)} faixas derivadas voltaram como a versão oficial.")
 
 
 def reabastecer_pool(discord_user_id, excluidos_sessao=None, meta=META_REABASTECIMENTO):
@@ -339,10 +370,16 @@ def reabastecer_pool(discord_user_id, excluidos_sessao=None, meta=META_REABASTEC
     votadas = historico_mod.chaves_frouxas_votadas(discord_user_id)
     with _lock_arquivo:
         pool_atual = carregar_pool(discord_user_id)
-        pool_limpo = [c for c in pool_atual if historico_mod.chave_frouxa(c["titulo"], c["artista"]) not in votadas]
+        derivadas = [c for c in pool_atual if versoes_mod.eh_derivada(c["artista"], c["titulo"])]
+        pool_limpo = [
+            c for c in pool_atual
+            if historico_mod.chave_frouxa(c["titulo"], c["artista"]) not in votadas
+            and not versoes_mod.eh_derivada(c["artista"], c["titulo"])
+        ]
         if len(pool_limpo) != len(pool_atual):
             _salvar_pool(discord_user_id, pool_limpo)
-            print(f" [ECHO] Pool: {len(pool_atual) - len(pool_limpo)} faixas já votadas removidas.")
+            print(f" [ECHO] Pool: {len(pool_atual) - len(pool_limpo)} faixas já votadas ou derivadas (nightcore/AMV) removidas.")
+    _readicionar_oficiais(discord_user_id, provedor, derivadas, votadas)
 
     excluidos_sessao_normalizados = {e.lower() for e in (excluidos_sessao or [])}
     conhecidas = votadas | {historico_mod.chave_frouxa(c["titulo"], c["artista"]) for c in pool_limpo}
@@ -359,13 +396,17 @@ def reabastecer_pool(discord_user_id, excluidos_sessao=None, meta=META_REABASTEC
         if adicionadas >= meta:
             break
         chave_artista = artista.strip().lower()
-        if chave_artista in artistas_buscados or artistas_mod.esta_rejeitado(discord_user_id, artista, artistas):
+        if (
+            chave_artista in artistas_buscados or versoes_mod.eh_derivada(artista)
+            or artistas_mod.esta_rejeitado(discord_user_id, artista, artistas)
+        ):
             continue
         artistas_buscados.add(chave_artista)
         try:
             candidatos_brutos = provedor.obter_faixas_do_artista(artista, limite=LIMITE_FAIXAS_POR_SEMENTE)
         except ProvedorIndisponivel:
             continue
+        candidatos_brutos = versoes_mod.oficializar(provedor, candidatos_brutos)
 
         novos_validos = []
         for candidato in candidatos_brutos:
