@@ -20,6 +20,7 @@ from echo.core import historico as historico_mod
 from echo.core import continuacao as continuacao_mod
 from echo.core import em_alta as em_alta_mod
 from echo.core import redescobertas as redescobertas_mod
+from echo.core import versoes as versoes_mod
 from echo.providers import obter_provedor, ProvedorIndisponivel
 
 LOCAL_API_HOST = "127.0.0.1"
@@ -59,7 +60,7 @@ def _coletar_candidatos(provedor, perfil, limite_geral=40, max_artistas=10, max_
             candidatos.extend(provedor.obter_faixas_por_tag(genero))
         except ProvedorIndisponivel:
             break
-    return candidatos
+    return versoes_mod.oficializar(provedor, candidatos)
 
 
 class _ProvedorVazio:

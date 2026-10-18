@@ -38,6 +38,7 @@ from datetime import date
 
 from echo.core import historico as historico_mod
 from echo.core import perfil as perfil_mod
+from echo.core import versoes as versoes_mod
 from echo.providers import ProvedorIndisponivel
 
 ARQUIVO_ARTISTAS = "data/artistas.json"
@@ -254,6 +255,7 @@ def registrar_voto(discord_user_id, titulo, artista, feedback, provedor=None, ab
             elif (
                 registro["estado"] == ESTADO_NORMAL and abrir_prova and provedor is not None
                 and registro["curtidas"] == 0 and not _eh_favorito(discord_user_id, artista)
+                and not versoes_mod.eh_derivada(artista)
             ):
                 _abrir_prova(registro, provedor, discord_user_id, titulo)
 
@@ -300,7 +302,8 @@ def proxima_faixa_de_prova(discord_user_id, excluidos=None):
                 _encerrar_por_neutras(registro)
             pendentes = [
                 (faixa, registro)
-                for registro in usuario["artistas"].values() if registro["estado"] == ESTADO_EM_PROVA
+                for registro in usuario["artistas"].values()
+                if registro["estado"] == ESTADO_EM_PROVA and not versoes_mod.eh_derivada(registro["nome"])
                 for faixa in registro["prova"]
                 if faixa["vezes_servida"] < MAX_VEZES_SERVIDA
                 and historico_mod.track_id(faixa["titulo"], faixa["artista"]) not in excluidos
