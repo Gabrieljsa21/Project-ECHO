@@ -110,26 +110,3 @@ def test_perfis_de_pessoas_diferentes_sao_isolados():
     assert not any(a["nome"] == "MF DOOM" for a in perfil_b["favorite_artists"])
     assert any(a["nome"] == "Taylor Swift" for a in perfil_b["favorite_artists"])
     assert not any(a["nome"] == "Taylor Swift" for a in perfil_a["favorite_artists"])
-
-
-def test_migra_formato_antigo_para_dono_configurado(tmp_path, monkeypatch):
-    """Formato antigo (2026-08-25): perfil único, sem chave de discord_user_id -
-    achado real 2026-08-26 (Modo Música virou social, um perfil só não dava
-    mais). A primeira carga depois do deploy migra o conteúdo pro dono."""
-    arquivo = tmp_path / "perfil_antigo.json"
-    formato_antigo = {
-        "favorite_artists": [{"nome": "MF DOOM", "genero": "boom bap"}],
-        "disliked_artists": [], "liked_tracks": [], "disliked_tracks": [],
-        "preferred_genres": {"boom bap": 1.0}, "preferred_eras": {}, "discovery_level": 0.5,
-    }
-    with open(arquivo, "w", encoding="utf-8") as f:
-        json.dump(formato_antigo, f)
-    monkeypatch.setattr(perfil_mod, "ARQUIVO_PERFIL", str(arquivo))
-
-    perfil_migrado = perfil_mod.carregar_perfil(perfil_mod.DONO_DISCORD_ID_MIGRACAO)
-    assert any(a["nome"] == "MF DOOM" for a in perfil_migrado["favorite_artists"])
-
-    # o arquivo já deve ter sido reescrito no formato novo
-    with open(arquivo, encoding="utf-8") as f:
-        dados_no_disco = json.load(f)
-    assert perfil_mod.DONO_DISCORD_ID_MIGRACAO in dados_no_disco

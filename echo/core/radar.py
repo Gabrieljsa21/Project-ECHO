@@ -7,10 +7,9 @@ sobre quantidade - nunca preenche a quota com um candidato ruim só pra bater o
 número (seção 7.3).
 
 🔥 Por pessoa (2026-08-26) - estado do Radar agora é `{discord_user_id: {...}}`."""
-import os
-import json
 from datetime import date
 
+from echo.core import armazenamento
 from echo.core import perfil as perfil_mod
 from echo.core import recomendador as recomendador_mod
 from echo.core import historico as historico_mod
@@ -29,24 +28,11 @@ SCORE_MINIMO_QUALIDADE = 0.15
 
 
 def _carregar_estado_todos():
-    if not os.path.exists(ARQUIVO_ESTADO_RADAR):
-        return {}
-    try:
-        with open(ARQUIVO_ESTADO_RADAR, "r", encoding="utf-8") as f:
-            dados = json.load(f)
-    except Exception:
-        return {}
-    # 🔥 Migração one-shot do formato antigo (estado único, sem chave de pessoa)
-    if "gerado_em" in dados:
-        dados = {perfil_mod.DONO_DISCORD_ID_MIGRACAO: dados}
-        _salvar_estado_todos(dados)
-    return dados
+    return armazenamento.carregar(ARQUIVO_ESTADO_RADAR, dict)
 
 
 def _salvar_estado_todos(todos):
-    os.makedirs(os.path.dirname(ARQUIVO_ESTADO_RADAR), exist_ok=True)
-    with open(ARQUIVO_ESTADO_RADAR, "w", encoding="utf-8") as f:
-        json.dump(todos, f, ensure_ascii=False, indent=2)
+    armazenamento.salvar(ARQUIVO_ESTADO_RADAR, todos)
 
 
 def radar_ja_gerado_hoje(discord_user_id):
@@ -133,12 +119,13 @@ def gerar_radar(discord_user_id, candidatos, quantidade=QUANTIDADE_PADRAO, compo
             reason=candidato["_categoria"], category=candidato["_categoria"],
         )
 
-    todos = _carregar_estado_todos()
-    todos[str(discord_user_id)] = {
-        "gerado_em": date.today().isoformat(),
-        "ultimo_radar": selecao,
-    }
-    _salvar_estado_todos(todos)
+    with armazenamento.LOCK:
+        todos = _carregar_estado_todos()
+        todos[str(discord_user_id)] = {
+            "gerado_em": date.today().isoformat(),
+            "ultimo_radar": selecao,
+        }
+        _salvar_estado_todos(todos)
 
     # 🔥 Reaproveita a MESMA rodada de descoberta pra alimentar o pool do
     # /caos (2026-08-26) - `ranqueados` já é a lista COMPLETA (antes da

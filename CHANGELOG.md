@@ -4,6 +4,36 @@ Este arquivo registra as mudanças importantes do projeto. O formato segue o [Ke
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
+### Adicionado
+
+- **Gravação segura dos arquivos de `data/`** - novo `echo/core/armazenamento.py`, usado por perfil, histórico, eventos de escuta, Radar, pool e artistas. A gravação é feita num arquivo temporário e trocada de uma vez, então uma queda no meio não deixa o arquivo cortado. Cada arquivo ganha um `.bak` com o conteúdo anterior e uma cópia por dia em `data/backups/` (ficam as 7 mais recentes). Arquivo ilegível é restaurado do `.bak`; sem cópia boa, ele é guardado como `.corrompido-<data>` em vez de ser sobrescrito.
+- **Servidor com uma thread por pedido** - gerar o Radar não segura mais os votos e o pedido de próxima faixa. Uma trava única protege os arquivos, e os votos são aplicados um por vez.
+- **Cache de gêneros do Last.fm em disco** (`data/cache_generos_lastfm.json`) - reiniciar o ECHO não refaz mais uma chamada por artista já resolvido.
+
+### Alterado
+
+- **Histórico sem repetições sem voto** - quando uma faixa sem voto toca de novo, a entrada dela é atualizada (data, motivo e o novo campo `aparicoes`) em vez de nascer outra linha. Na primeira subida, as repetições já gravadas são unidas e o arquivo anterior fica guardado como `historico_recomendacoes.antes-compactacao-<data>.json`. Nos dados reais, 8.088 entradas viraram 2.917, com os mesmos votos e as mesmas datas de última aparição.
+- **Consultas ao histórico por índice em memória** - o ranking fazia uma leitura completa do arquivo por candidato. Nos dados reais, ranquear 200 candidatos caiu de 36,7 s para 0,1 s e uma sugestão do pool de 959 ms para 111 ms.
+- `artistas.json` só é gravado quando algo muda; a contagem de sugestões entre faixas de prova fica em memória.
+- Listas (`historico_recomendacoes.json`, `eventos_escuta.json`) passam a ser gravadas com um item por linha.
+- As chamadas ao Last.fm usam `https`.
+
+### Corrigido
+
+- Falha momentânea do Last.fm ao buscar o gênero de um artista ficava em cache por 7 dias, e o artista seguia sem gênero até o ECHO reiniciar. Agora só resposta válida entra no cache.
+- Pedido com número inválido (`limite`, `quantidade`, `peso`, `valor`) ou com erro inesperado derrubava a conexão sem resposta. Agora o número inválido vira o valor padrão, falha do provedor vira `503` e erro inesperado vira `500`, sempre em JSON e com o rastro no log.
+- A busca das faixas da prova de um artista (rede) era feita com a trava dos arquivos presa.
+
+### Removido
+
+- Migração do formato antigo de `perfil.json` e `radar_estado.json` (um perfil só, sem `discord_user_id`) e a constante `DONO_DISCORD_ID_MIGRACAO`. Os arquivos em uso já estão no formato por pessoa desde 2026-08-26.
+
+### Segurança
+
+- `.gitignore` passa a ignorar a pasta `data/` inteira. Antes só `data/*.json` era ignorado, e subpastas de cópia apareciam como arquivos novos no `git status`.
+
 ## [0.3.0] - 2026-10-17
 
 ### Corrigido
