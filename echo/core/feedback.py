@@ -11,6 +11,9 @@ Pular cedo, ouvir até o final... são sinais fracos e acumulativos"):
 - **Fraco** (passivo, tempo de escuta): um evento isolado NÃO ajusta peso -
   só depois de um padrão consistente (`historico.contar_eventos_fracos_
   recentes`) é que vira um ajuste pequeno de verdade."""
+import functools
+import threading
+
 from echo.core import artistas as artistas_mod
 from echo.core import perfil as perfil_mod
 from echo.core import historico as historico_mod
@@ -24,7 +27,23 @@ AJUSTE_PASSIVO_POSITIVO = 0.03
 AJUSTE_PASSIVO_NEGATIVO = -0.03
 MINIMO_EVENTOS_FRACOS_PARA_AJUSTAR = 3
 
+# Um voto por vez (2026-11-09, servidor com threads): cada voto consulta o
+# voto anterior, desfaz e aplica o novo em vários arquivos. Dois cliques
+# seguidos na mesma faixa não podem se misturar. Trava própria, pedida antes
+# da trava da persistência, pra chamada de rede de um voto (gênero, prova)
+# não segurar as leituras dos outros pedidos.
+_lock_votos = threading.RLock()
 
+
+def _um_voto_por_vez(funcao):
+    @functools.wraps(funcao)
+    def envolvida(*args, **kwargs):
+        with _lock_votos:
+            return funcao(*args, **kwargs)
+    return envolvida
+
+
+@_um_voto_por_vez
 def processar_feedback(discord_user_id, track_id, feedback, genero=None):
     """`genero` vem de quem está mandando o feedback (a GAIA reenvia o gênero
     dominante que recebeu junto com a faixa no Radar) - sem ele, o feedback ainda fica
@@ -44,10 +63,7 @@ def processar_feedback(discord_user_id, track_id, feedback, genero=None):
         return None
 
     if genero:
-        perfil = perfil_mod.carregar_perfil(discord_user_id)
-        delta = AJUSTE_POSITIVO if feedback == "positivo" else AJUSTE_NEGATIVO
-        perfil_mod.ajustar_peso_genero(perfil, genero, delta)
-        perfil_mod.salvar_perfil(discord_user_id, perfil)
+        _ajustar_genero(discord_user_id, genero, AJUSTE_POSITIVO if feedback == "positivo" else AJUSTE_NEGATIVO)
 
     pool_mod.remover_track(discord_user_id, entrada["titulo"], entrada["artista"])
     try:
@@ -59,6 +75,7 @@ def processar_feedback(discord_user_id, track_id, feedback, genero=None):
     return entrada
 
 
+@_um_voto_por_vez
 def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedback, abrir_prova=True):
     """👍/👎 nos botões do Modo Música do ERIS (2026-08-26, pedido do usuário:
     "quando ela toca uma musica, podia aparecer botoes de like, dislike e
@@ -105,6 +122,7 @@ def processar_feedback_ao_vivo(discord_user_id, provedor, titulo, artista, feedb
     return entrada
 
 
+@_um_voto_por_vez
 def remover_voto_ao_vivo(discord_user_id, provedor, titulo, artista):
     """Clicar de novo no 👍/👎 já marcado (SIREN, 2026-10-12): a faixa volta a
     não ter voto. Desfaz o ajuste de gênero e a nota do artista do voto que
@@ -126,9 +144,7 @@ def _generos_do_artista(provedor, artista):
 
 
 def _ajustar_genero(discord_user_id, genero, delta):
-    perfil = perfil_mod.carregar_perfil(discord_user_id)
-    perfil_mod.ajustar_peso_genero(perfil, genero, delta)
-    perfil_mod.salvar_perfil(discord_user_id, perfil)
+    perfil_mod.ajustar_e_salvar_genero(discord_user_id, genero, delta)
 
 
 def _desfazer_voto(discord_user_id, generos, titulo, artista, voto):
@@ -138,6 +154,7 @@ def _desfazer_voto(discord_user_id, generos, titulo, artista, voto):
     artistas_mod.desfazer_voto(discord_user_id, artista, voto)
 
 
+@_um_voto_por_vez
 def processar_feedback_passivo(discord_user_id, provedor, titulo, artista, fracao_tocada, pulado, momento_do_skip=None):
     """Sinal FRACO (2026-08-26) - sempre registra o evento bruto
     (`historico.registrar_evento_escuta`), mas só ajusta peso de gênero
@@ -166,8 +183,5 @@ def processar_feedback_passivo(discord_user_id, provedor, titulo, artista, fraca
     if not generos:
         return {"ajustou_peso": False}
 
-    perfil = perfil_mod.carregar_perfil(discord_user_id)
-    delta = AJUSTE_PASSIVO_NEGATIVO if negativo else AJUSTE_PASSIVO_POSITIVO
-    perfil_mod.ajustar_peso_genero(perfil, generos[0], delta)
-    perfil_mod.salvar_perfil(discord_user_id, perfil)
+    _ajustar_genero(discord_user_id, generos[0], AJUSTE_PASSIVO_NEGATIVO if negativo else AJUSTE_PASSIVO_POSITIVO)
     return {"ajustou_peso": True, "negativo": negativo}

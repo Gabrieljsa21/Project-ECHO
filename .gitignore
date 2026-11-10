@@ -14,8 +14,8 @@ dist/
 .env.*
 !.env.example
 
-# Dados gerados em runtime (estado real do usuário)
-data/*.json
+# Dados gerados em runtime (estado real do usuário, cópias e backups)
+data/
 logs/
 
 # Editores / SO

@@ -9,8 +9,9 @@ ECHO_SPEC); aqui só o ranking determinístico e a persistência.
 pra GET, corpo pra POST) - Modo Música é social, cada pessoa tem o próprio
 perfil/pool/histórico."""
 import json
+import traceback
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from echo.core import artistas as artistas_mod
 from echo.core import perfil as perfil_mod
@@ -28,11 +29,28 @@ LOCAL_API_PORT = 8774
 
 
 def _ler_corpo_json(handler):
-    tamanho = int(handler.headers.get("Content-Length", 0))
     try:
-        return json.loads(handler.rfile.read(tamanho)) if tamanho else {}
+        tamanho = int(handler.headers.get("Content-Length", 0))
+        corpo = json.loads(handler.rfile.read(tamanho)) if tamanho else {}
     except Exception:
         return {}
+    return corpo if isinstance(corpo, dict) else {}
+
+
+def _inteiro(valor, padrao):
+    """Número inteiro vindo de fora; valor inválido vira o padrão em vez de
+    derrubar o pedido."""
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return padrao
+
+
+def _decimal(valor, padrao):
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return padrao
 
 
 def _coletar_candidatos(provedor, perfil, limite_geral=40, max_artistas=10, max_generos=5):
@@ -75,6 +93,7 @@ class _API(BaseHTTPRequestHandler):
         corpo = json.dumps(dados).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(corpo)))
         self.end_headers()
         self.wfile.write(corpo)
 
@@ -82,7 +101,29 @@ class _API(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
+    def _atender(self, rotear):
+        """Nenhum pedido fica sem resposta (2026-11-09): falha do provedor
+        não tratada pela rota vira 503 e qualquer outro erro vira 500 em
+        JSON, com o rastro no log. Antes a conexão caía sem corpo."""
+        try:
+            rotear()
+        except ProvedorIndisponivel as e:
+            self._responder_json({"erro": str(e)}, status=503)
+        except Exception as e:
+            print(f" [ECHO] Erro em {self.command} {self.path.partition('?')[0]}: {e}")
+            traceback.print_exc()
+            try:
+                self._responder_json({"erro": f"erro interno: {e}"}, status=500)
+            except Exception:
+                pass
+
     def do_GET(self):
+        self._atender(self._rotear_get)
+
+    def do_POST(self):
+        self._atender(self._rotear_post)
+
+    def _rotear_get(self):
         caminho, _, query = self.path.partition("?")
         params = urllib.parse.parse_qs(query)
         discord_user_id = (params.get("discord_user_id") or [""])[0]
@@ -137,7 +178,7 @@ class _API(BaseHTTPRequestHandler):
             except ProvedorIndisponivel as e:
                 self._responder_json({"erro": str(e), "radar": []}, status=503)
         elif caminho == "/radar/historico":
-            limite = int((params.get("limite") or [20])[0])
+            limite = _inteiro((params.get("limite") or [20])[0], 20)
             self._responder_json(historico_mod.obter_historico(discord_user_id, limite))
         elif caminho == "/em_alta":
             # 🔥 Seção 3.3 do ECHO_SPEC - mesma fonte do Radar (chart global),
@@ -151,13 +192,13 @@ class _API(BaseHTTPRequestHandler):
         elif caminho == "/redescobertas":
             # 🔥 Seção 9 do ECHO_SPEC - só dados locais (histórico/eventos de
             # escuta), sem chamada ao provedor.
-            quantidade = int((params.get("quantidade") or [1])[0])
+            quantidade = _inteiro((params.get("quantidade") or [1])[0], 1)
             self._responder_json({"redescobertas": redescobertas_mod.obter_redescobertas(discord_user_id, quantidade)})
         else:
             self._responder_404()
 
-    def do_POST(self):
-        caminho = self.path
+    def _rotear_post(self):
+        caminho = self.path.partition("?")[0]
         corpo = _ler_corpo_json(self)
         discord_user_id = corpo.get("discord_user_id", "")
 
@@ -166,9 +207,9 @@ class _API(BaseHTTPRequestHandler):
         elif caminho == "/perfil/artista_rejeitado":
             self._responder_json(perfil_mod.adicionar_artista_rejeitado(discord_user_id, corpo.get("nome", "")))
         elif caminho == "/perfil/genero":
-            self._responder_json(perfil_mod.definir_peso_genero(discord_user_id, corpo.get("nome", ""), float(corpo.get("peso", 0.5))))
+            self._responder_json(perfil_mod.definir_peso_genero(discord_user_id, corpo.get("nome", ""), _decimal(corpo.get("peso"), 0.5)))
         elif caminho == "/perfil/discovery_level":
-            self._responder_json(perfil_mod.definir_discovery_level(discord_user_id, float(corpo.get("valor", 0.5))))
+            self._responder_json(perfil_mod.definir_discovery_level(discord_user_id, _decimal(corpo.get("valor"), 0.5)))
         elif caminho == "/radar/feedback":
             entrada = feedback_mod.processar_feedback(
                 discord_user_id, corpo.get("track_id", ""), corpo.get("feedback", ""), corpo.get("genero"),
@@ -240,7 +281,7 @@ class _API(BaseHTTPRequestHandler):
         elif caminho == "/perfil/importar_historico":
             try:
                 provedor = obter_provedor()
-                limite = int(corpo.get("limite", 30))
+                limite = _inteiro(corpo.get("limite"), 30)
                 artistas = provedor.obter_top_artistas_usuario(limite=limite)
                 perfil = perfil_mod.importar_favoritos_do_historico(discord_user_id, artistas)
                 self._responder_json({"perfil": perfil, "artistas_importados": len(artistas)})
@@ -271,6 +312,14 @@ class _API(BaseHTTPRequestHandler):
         return
 
 
+class _Servidor(ThreadingHTTPServer):
+    """Uma thread por pedido (2026-11-09). Com thread única, gerar o Radar
+    (dezenas de chamadas ao Last.fm) segurava os votos e o pedido de próxima
+    faixa do SIREN até terminar. Os arquivos de `data/` são protegidos por
+    `core/armazenamento.LOCK`."""
+    daemon_threads = True
+
+
 def iniciar_servidor_api():
-    servidor = HTTPServer((LOCAL_API_HOST, LOCAL_API_PORT), _API)
+    servidor = _Servidor((LOCAL_API_HOST, LOCAL_API_PORT), _API)
     servidor.serve_forever()

@@ -18,9 +18,10 @@ import re
 import time
 import requests
 
+from echo.core import armazenamento
 from echo.providers import ProvedorMusical, ProvedorIndisponivel
 
-_URL_BASE = "http://ws.audioscrobbler.com/2.0/"
+_URL_BASE = "https://ws.audioscrobbler.com/2.0/"
 
 # 🔥 Cache em nível de MÓDULO, não de instância (2026-09-06, achado do
 # usuário no Project-SIREN: "porque está demorando pra entrar na página
@@ -35,6 +36,10 @@ _TTL_LANCAMENTOS_SEGUNDOS = 600  # 10min - chart global não muda a cada request
 _TTL_GENERO_SEGUNDOS = 7 * 24 * 3600  # 7 dias - gênero de artista é essencialmente estático
 _cache_lancamentos = {}  # limite -> (resultado, timestamp)
 _cache_generos = {}  # nome_artista_lower -> (generos, timestamp)
+# O cache de gêneros também fica em disco (2026-11-09): sem isso, cada
+# reinício do ECHO refazia 1 chamada por artista já resolvido.
+ARQUIVO_CACHE_GENEROS = "data/cache_generos_lastfm.json"
+_cache_generos_carregado_de = None
 _TTL_INFO_FAIXA_SEGUNDOS = 30 * 24 * 3600  # álbum/duração de uma faixa não mudam
 _cache_info_faixa = {}  # "artista::titulo" -> (info, timestamp)
 
@@ -59,6 +64,30 @@ def _limpar_titulo(titulo):
     titulo = re.sub(r"[\(\[].*?[\)\]]", " ", titulo)
     titulo = titulo.split(" - ")[0]
     return re.sub(r"\s+", " ", titulo).strip()
+
+
+def _carregar_cache_generos():
+    """Lê o cache do disco uma vez por arquivo; o que já está em memória e
+    é mais novo continua valendo."""
+    global _cache_generos_carregado_de
+    if _cache_generos_carregado_de == ARQUIVO_CACHE_GENEROS:
+        return
+    _cache_generos_carregado_de = ARQUIVO_CACHE_GENEROS
+    try:
+        gravado = armazenamento.carregar(ARQUIVO_CACHE_GENEROS, dict)
+        for chave, (generos, momento) in gravado.items():
+            atual = _cache_generos.get(chave)
+            if atual is None or atual[1] < momento:
+                _cache_generos[chave] = (generos, momento)
+    except Exception as e:
+        print(f" [ECHO] Cache de gêneros em disco ignorado: {e}")
+
+
+def _salvar_cache_generos():
+    try:
+        armazenamento.salvar(ARQUIVO_CACHE_GENEROS, {chave: list(valor) for chave, valor in _cache_generos.items()})
+    except Exception as e:
+        print(f" [ECHO] Não consegui gravar o cache de gêneros: {e}")
 
 
 def _normalizar_popularidade(listeners):
@@ -115,8 +144,10 @@ class ProvedorLastfm(ProvedorMusical):
         um artista já resolvido antes (em QUALQUER chamada, radar/em_alta/
         importação) nunca precisa de rede de novo tão cedo."""
         nomes_unicos = list(dict.fromkeys(n for n in nomes_artistas if n))[:_MAX_ARTISTAS_PARA_RESOLVER_GENERO]
+        _carregar_cache_generos()
         agora = time.time()
         generos = {}
+        resolveu_algum = False
         for nome in nomes_unicos:
             chave = nome.lower()
             em_cache = _cache_generos.get(chave)
@@ -128,9 +159,16 @@ class ProvedorLastfm(ProvedorMusical):
                 tags = dados.get("toptags", {}).get("tag", [])
                 lista_generos = [t["name"].lower() for t in tags[:5]]
             except ProvedorIndisponivel:
-                lista_generos = []
+                # Falha (rede, limite de requisições) não entra no cache
+                # (2026-11-09): antes o artista ficava "sem gênero" por 7
+                # dias por causa de um erro de um instante.
+                generos[chave] = []
+                continue
             generos[chave] = lista_generos
             _cache_generos[chave] = (lista_generos, agora)
+            resolveu_algum = True
+        if resolveu_algum:
+            _salvar_cache_generos()
         return generos
 
     def _normalizar_faixa(self, faixa, generos_por_artista, fonte):

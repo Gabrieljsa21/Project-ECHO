@@ -38,10 +38,23 @@ def _garantir_instancia_unica():
         sys.exit(1)
 
 
+def _compactar_historico():
+    """Junta as repetições sem voto do histórico (ver
+    `historico.compactar`). Falha aqui nunca impede o ECHO de subir."""
+    try:
+        from echo.core import historico
+        removidas = historico.compactar()
+        if removidas:
+            print(f" [SISTEMA] Histórico compactado: {removidas} repetições sem voto unidas (cópia do arquivo anterior em data/).")
+    except Exception as e:
+        print(f" [SISTEMA] Compactação do histórico pulada: {e}")
+
+
 def main():
     runtime_log.ativar(PASTA_PROJETO)
     _garantir_instancia_unica()
     os.makedirs("data", exist_ok=True)
+    _compactar_historico()
 
     print(" [SISTEMA] ECHO pronto - ponte HTTP na porta 8774 (sem loop próprio, GAIA decide quando gerar o Radar).")
     iniciar_servidor_api()  # bloqueia a thread principal

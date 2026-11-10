@@ -7,12 +7,8 @@ credencial real do usuário. Ver `CHANGELOG.md` pro detalhe completo.
 
 ## Prioridade média (Fase 2 do ECHO_SPEC)
 
-- **Consumir `/em_alta` e `/redescobertas` do lado da GAIA** - os endpoints já
-  existem no ECHO (`core/em_alta.py`, `core/redescobertas.py`, ver
-  `ARQUITETURA.md`), mas `echo_client.py` (repo da GAIA) ainda não tem
-  wrappers pra eles, e nenhuma tag/comando os expõe em conversa - mesmo padrão
-  de outros endpoints já expostos "pra um Painel futuro". Complexidade: baixa
-  (wrapper) a média (desenho de tag/persona). Status: não iniciado.
+- **SIREN não envia o tempo de escuta** - `POST /radar/feedback_passivo` só é chamado pelo ERIS (via GAIA). O cliente do SIREN (`siren/integrations/echo_client.py`) não tem essa chamada, e `data/eventos_escuta.json` não recebe evento desde 2026-09-06. Sem isso, o ajuste por faixa pulada cedo ou ouvida até o fim e parte das Redescobertas ficam sem dado novo. A mudança é no repositório do SIREN: ao trocar de faixa, mandar `artista`, `titulo`, `fracao_tocada`, `pulado` e `momento_do_skip`. Complexidade: baixa. Status: não iniciado.
+- **Consumir `/em_alta` e `/redescobertas` em conversa na GAIA** - o SIREN já mostra as duas listas. Falta o `echo_client.py` da GAIA ter as chamadas e alguma tag ou comando expor isso em conversa. Complexidade: baixa (chamadas) a média (desenho de tag e persona). Status: não iniciado.
 
 ## Prioridade baixa (Fase 3 do ECHO_SPEC)
 

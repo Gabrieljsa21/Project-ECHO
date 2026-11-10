@@ -15,13 +15,12 @@ INCREMENTAL, não recriado do zero (seção pedida pelo usuário: "o pool deve s
 incremental... novas rodadas adicionam candidatos, atualizam scores e removem
 entradas inválidas ou obsoletas") - preserva o que ainda não foi consumido
 entre uma rodada de descoberta e outra."""
-import os
-import json
 import random
 import threading
 import time
 from datetime import date
 
+from echo.core import armazenamento
 from echo.core import artistas as artistas_mod
 from echo.core import historico as historico_mod
 from echo.core import recomendador as recomendador_mod
@@ -47,12 +46,10 @@ LIMITE_FAIXAS_POR_SEMENTE = 15
 LIMITE_SIMILARES_POR_SEMENTE = 5
 MAXIMO_POR_ARTISTA_REABASTECIMENTO = 3
 
-# 🔥 O ECHO é um `HTTPServer` de thread ÚNICA (`api_bridge.py`) - "não
-# bloquear nem interromper a reprodução" aqui significa literalmente não
-# segurar essa thread enquanto a descoberta faz chamadas de rede. `_lock_
-# arquivo` protege o arquivo do pool (agora escrito por até 2 threads ao
-# mesmo tempo: a principal, num voto/feedback, e a de reabastecimento).
-_lock_arquivo = threading.Lock()
+# `_lock_arquivo` é a trava única da persistência (`armazenamento.LOCK`,
+# 2026-11-09): o pool é escrito pela thread de reabastecimento e pelas
+# threads dos pedidos HTTP. Nunca segurar durante chamada de rede.
+_lock_arquivo = armazenamento.LOCK
 _lock_em_andamento = threading.Lock()
 _reabastecendo = set()  # discord_user_id (str) com pesquisa em andamento - evita disparo duplicado
 
@@ -82,25 +79,18 @@ def _id_candidato(candidato):
 
 
 def _carregar_todos():
-    if not os.path.exists(ARQUIVO_POOL):
-        return {}
-    try:
-        with open(ARQUIVO_POOL, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    return armazenamento.carregar(ARQUIVO_POOL, dict)
 
 
 def _salvar_todos(todos):
-    os.makedirs(os.path.dirname(ARQUIVO_POOL), exist_ok=True)
-    with open(ARQUIVO_POOL, "w", encoding="utf-8") as f:
-        json.dump(todos, f, ensure_ascii=False, indent=2)
+    armazenamento.salvar(ARQUIVO_POOL, todos)
 
 
 def carregar_pool(discord_user_id):
     return _carregar_todos().get(str(discord_user_id), {}).get("candidatos", [])
 
 
+@armazenamento.com_trava
 def _salvar_pool(discord_user_id, candidatos):
     todos = _carregar_todos()
     todos[str(discord_user_id)] = {
@@ -243,10 +233,9 @@ def remover_track(discord_user_id, titulo, artista):
 # --------------------------------------------------------------------------
 # Reabastecimento de emergência (2026-08-28) - dispara quando `consumir_
 # proxima` percebe que sobrou pouca candidata sem voto pra sessão atual (ver
-# `MINIMO_DISPONIVEL` acima). Roda numa THREAD separada porque o ECHO é um
-# `HTTPServer` de thread única (`api_bridge.py`) - sem isso, a pesquisa (rede,
-# vários segundos) travaria toda resposta do ECHO até terminar, inclusive pro
-# `/caos` que só quer consumir o que já sobrou no pool AGORA.
+# `MINIMO_DISPONIVEL` acima). Roda numa THREAD separada pra pesquisa (rede,
+# vários segundos) não segurar o pedido do `/caos`, que só quer consumir o
+# que já sobrou no pool AGORA.
 # --------------------------------------------------------------------------
 
 def _acionar_reabastecimento_background(discord_user_id, excluidos_sessao):
@@ -382,7 +371,7 @@ def reabastecer_pool(discord_user_id, excluidos_sessao=None, meta=META_REABASTEC
     _readicionar_oficiais(discord_user_id, provedor, derivadas, votadas)
 
     excluidos_sessao_normalizados = {e.lower() for e in (excluidos_sessao or [])}
-    conhecidas = votadas | {historico_mod.chave_frouxa(c["titulo"], c["artista"]) for c in pool_limpo}
+    conhecidas = set(votadas) | {historico_mod.chave_frouxa(c["titulo"], c["artista"]) for c in pool_limpo}
     ids_ja_vistos_na_rodada = set()  # dedup entre sementes (2 artistas podem devolver a mesma faixa em feat.)
     artistas = artistas_mod.carregar(discord_user_id)
     perfil = perfil_mod.carregar_perfil(discord_user_id)

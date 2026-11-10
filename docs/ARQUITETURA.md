@@ -518,13 +518,44 @@ Limitação conhecida: título de uma palavra só e sem pista ("Impossible", "Ru
 
 ## Persistência (`data/`, gitignored)
 
-`perfil.json`, `historico_recomendacoes.json`, `eventos_escuta.json`,
-`radar_estado.json`, `pool_musical.json`, `artistas.json` (2026-09-26) - todos no formato `{discord_user_id:
-{...}}` desde 2026-08-26 (migração one-shot do formato antigo na primeira
-carga, ver `DONO_DISCORD_ID_MIGRACAO`). Lidos do disco a cada chamada (nunca
-cacheados em memória entre requests), mesmo padrão já usado no HESTIA/MOIRAI
-depois do bug real de cache stale documentado lá
-(`Project G.A.I.A/assistant/docs/CORRECOES.md`).
+`perfil.json`, `historico_recomendacoes.json`, `eventos_escuta.json`, `radar_estado.json`, `pool_musical.json`, `artistas.json` e `cache_generos_lastfm.json`. Os arquivos de perfil, Radar, pool e artistas usam o formato `{discord_user_id: {...}}`. A migração do formato antigo (um perfil só) foi removida na 0.4.0.
+
+### Gravação segura (`core/armazenamento.py`, 2026-11-09)
+
+Problema: cada módulo gravava com `open(..., "w")` e devolvia vazio quando a leitura falhava. Uma queda no meio da gravação deixava o arquivo cortado, a leitura seguinte devolvia vazio e a próxima gravação apagava tudo, sem cópia. O histórico de 2,8 MB era regravado a cada sugestão, então a janela de risco se repetia o tempo todo.
+
+Toda leitura e gravação de `data/` passa por `armazenamento.carregar` e `armazenamento.salvar`:
+
+- a gravação vai para `<arquivo>.tmp` (com `fsync`) e entra no lugar com `os.replace`;
+- o conteúdo anterior vira `<arquivo>.bak`;
+- antes da primeira gravação do dia, o arquivo é copiado para `data/backups/<nome>.<AAAA-MM-DD>.json`; ficam as 7 cópias mais recentes de cada arquivo;
+- arquivo ilegível ou ausente é restaurado do `.bak`; sem cópia boa, ele é renomeado para `.corrompido-<data-hora>` e o módulo começa vazio, com aviso no log.
+
+Decisão: manter JSON em vez de trocar por SQLite. Os arquivos são pequenos depois da compactação, os scripts de manutenção já leem JSON e a troca atômica com cópias resolve o risco de perda. SQLite continua sendo a saída se o histórico voltar a crescer.
+
+### Cache e índice do histórico
+
+`historico_recomendacoes.json` e `eventos_escuta.json` ficam em cache na memória (`cache=True`). O cache é conferido pelo tamanho e pela data de modificação do arquivo a cada leitura, então uma edição feita por fora (script de manutenção) é percebida sem reiniciar. Isso evita o cache velho que já causou erro no HESTIA e no MOIRAI. Os demais arquivos são pequenos e continuam lidos do disco a cada chamada.
+
+`historico._indice` monta, por pessoa, o voto vigente de cada faixa e a data da última recomendação. O índice é refeito só quando o arquivo muda. Antes, `foi_recomendada_recentemente` e `foi_votada` reliam o arquivo inteiro a cada chamada, e o ranking chama uma delas por candidato.
+
+### Histórico sem repetição sem voto
+
+`registrar_recomendacao` atualiza a entrada mais recente da faixa quando ela ainda não tem voto (data, motivo, `aparicoes` + 1) e a leva para o fim da lista. Entrada com voto nunca é alterada. Por pessoa e faixa ficam no máximo duas entradas: a mais recente com voto e a mais recente de todas. Isso preserva tudo o que as consultas usam: voto vigente, data da última aparição e ordem de `obter_historico`.
+
+`historico.compactar()` roda quando o ECHO sobe e aplica a mesma regra ao que já estava gravado. Antes de gravar, copia o arquivo para `historico_recomendacoes.antes-compactacao-<data>.json`.
+
+### Threads e travas
+
+`api_bridge.py` usa `ThreadingHTTPServer` (uma thread por pedido) desde a 0.4.0. As menções a "thread única" nas seções mais antigas deste documento descrevem o estado anterior.
+
+- `armazenamento.LOCK` é a trava única da persistência, reentrante. Toda função que lê, altera e grava segura essa trava. `pool._lock_arquivo` e `artistas._lock` apontam para ela.
+- `feedback._lock_votos` aplica um voto por vez. Ela é pedida antes de `LOCK` e nunca o contrário.
+- Chamada de rede nunca roda com `LOCK` presa. A busca das faixas de prova (`artistas._buscar_faixas_para_prova`) acontece antes de a trava ser pedida.
+
+### Respostas de erro da ponte HTTP
+
+Toda rota passa por `_API._atender`. `ProvedorIndisponivel` que a rota não trata vira `503` com `{"erro": ...}`. Qualquer outra exceção vira `500` com `{"erro": "erro interno: ..."}` e o rastro vai para o log. Número inválido em `limite`, `quantidade`, `peso` ou `valor` vira o valor padrão da rota.
 
 ## O que fica pendente pra Fase 2/3 (ver `TODO.md`)
 

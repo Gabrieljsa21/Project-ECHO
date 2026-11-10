@@ -10,16 +10,11 @@ Modo Música é social (aberto a qualquer membro do servidor), então um 👎 de
 um visitante não pode mexer no perfil do dono. `ARQUIVO_PERFIL` guarda
 `{discord_user_id: {perfil...}}` em vez de um perfil único; toda função daqui
 pra baixo exige `discord_user_id` como primeiro parâmetro."""
-import os
 import json
 
-ARQUIVO_PERFIL = "data/perfil.json"
+from echo.core import armazenamento
 
-# 🔥 Migração one-shot do formato antigo (perfil único, sem chave de pessoa) -
-# o dono ativo real (Project-ERIS/data/eris.db, tabela donos) na hora dessa
-# migração, usado só como destino do perfil já existente (38 artistas
-# importados antes desta mudança).
-DONO_DISCORD_ID_MIGRACAO = "304469035607916545"
+ARQUIVO_PERFIL = "data/perfil.json"
 
 _PERFIL_PADRAO = {
     "favorite_artists": [],
@@ -32,31 +27,12 @@ _PERFIL_PADRAO = {
 }
 
 
-def _eh_formato_antigo(dados):
-    """Formato antigo: as chaves são os próprios campos do perfil
-    (`favorite_artists` etc.) direto na raiz. Formato novo: as chaves são
-    `discord_user_id`."""
-    return "favorite_artists" in dados
-
-
 def _carregar_todos():
-    if not os.path.exists(ARQUIVO_PERFIL):
-        return {}
-    try:
-        with open(ARQUIVO_PERFIL, "r", encoding="utf-8") as f:
-            dados = json.load(f)
-    except Exception:
-        return {}
-    if _eh_formato_antigo(dados):
-        dados = {DONO_DISCORD_ID_MIGRACAO: dados}
-        _salvar_todos(dados)
-    return dados
+    return armazenamento.carregar(ARQUIVO_PERFIL, dict)
 
 
 def _salvar_todos(todos):
-    os.makedirs(os.path.dirname(ARQUIVO_PERFIL), exist_ok=True)
-    with open(ARQUIVO_PERFIL, "w", encoding="utf-8") as f:
-        json.dump(todos, f, ensure_ascii=False, indent=2)
+    armazenamento.salvar(ARQUIVO_PERFIL, todos)
 
 
 def carregar_perfil(discord_user_id):
@@ -69,12 +45,14 @@ def carregar_perfil(discord_user_id):
     return perfil
 
 
+@armazenamento.com_trava
 def salvar_perfil(discord_user_id, perfil):
     todos = _carregar_todos()
     todos[str(discord_user_id)] = perfil
     _salvar_todos(todos)
 
 
+@armazenamento.com_trava
 def adicionar_artista_favorito(discord_user_id, nome, genero=None):
     perfil = carregar_perfil(discord_user_id)
     nome_normalizado = nome.strip().lower()
@@ -87,6 +65,7 @@ def adicionar_artista_favorito(discord_user_id, nome, genero=None):
     return perfil
 
 
+@armazenamento.com_trava
 def adicionar_artista_rejeitado(discord_user_id, nome):
     perfil = carregar_perfil(discord_user_id)
     nome_normalizado = nome.strip().lower()
@@ -97,6 +76,7 @@ def adicionar_artista_rejeitado(discord_user_id, nome):
     return perfil
 
 
+@armazenamento.com_trava
 def definir_peso_genero(discord_user_id, nome_genero, peso):
     perfil = carregar_perfil(discord_user_id)
     perfil["preferred_genres"][nome_genero] = max(0.0, min(1.0, peso))
@@ -114,6 +94,16 @@ def ajustar_peso_genero(perfil, nome_genero, delta):
     perfil["preferred_genres"][nome_genero] = max(0.0, min(1.0, atual + delta))
 
 
+@armazenamento.com_trava
+def ajustar_e_salvar_genero(discord_user_id, nome_genero, delta):
+    """Carrega, ajusta um gênero e grava, tudo com a trava."""
+    perfil = carregar_perfil(discord_user_id)
+    ajustar_peso_genero(perfil, nome_genero, delta)
+    salvar_perfil(discord_user_id, perfil)
+    return perfil
+
+
+@armazenamento.com_trava
 def definir_discovery_level(discord_user_id, valor):
     perfil = carregar_perfil(discord_user_id)
     perfil["discovery_level"] = max(0.0, min(1.0, valor))
@@ -121,6 +111,7 @@ def definir_discovery_level(discord_user_id, valor):
     return perfil
 
 
+@armazenamento.com_trava
 def importar_favoritos_do_historico(discord_user_id, artistas_ranqueados):
     """Seed do perfil a partir do histórico REAL de escuta (`provedor.
     obter_top_artistas_usuario`, requer `LASTFM_USERNAME`) - `artistas_ranqueados`:

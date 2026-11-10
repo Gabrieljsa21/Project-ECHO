@@ -31,11 +31,9 @@ sempre. Rejeição exige 👎 em TODAS as faixas da prova.
 A 1ª leitura de cada pessoa reconstrói as notas a partir dos votos que já
 existem no histórico, sem abrir prova nenhuma (votos antigos não disparam a
 regra retroativamente)."""
-import json
-import os
-import threading
 from datetime import date
 
+from echo.core import armazenamento
 from echo.core import historico as historico_mod
 from echo.core import perfil as perfil_mod
 from echo.core import versoes as versoes_mod
@@ -58,7 +56,13 @@ ESTADO_NORMAL = "normal"
 ESTADO_EM_PROVA = "em_prova"
 ESTADO_REJEITADO = "rejeitado"
 
-_lock = threading.Lock()
+_lock = armazenamento.LOCK
+
+# Contagem de sugestões desde a última faixa de prova, por pessoa. Fica em
+# memória (2026-11-09): gravar o arquivo a cada sugestão só para subir esse
+# número regravava `artistas.json` inteiro a cada faixa do Caos. O valor do
+# arquivo serve de ponto de partida depois de reiniciar.
+_sugestoes_desde_prova = {}
 
 
 def _chave(nome):
@@ -66,19 +70,11 @@ def _chave(nome):
 
 
 def _carregar_todos():
-    if not os.path.exists(ARQUIVO_ARTISTAS):
-        return {}
-    try:
-        with open(ARQUIVO_ARTISTAS, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    return armazenamento.carregar(ARQUIVO_ARTISTAS, dict)
 
 
 def _salvar_todos(todos):
-    os.makedirs(os.path.dirname(ARQUIVO_ARTISTAS), exist_ok=True)
-    with open(ARQUIVO_ARTISTAS, "w", encoding="utf-8") as f:
-        json.dump(todos, f, ensure_ascii=False, indent=2)
+    armazenamento.salvar(ARQUIVO_ARTISTAS, todos)
 
 
 def _registro_vazio(nome):
@@ -111,7 +107,7 @@ def _reconstruir_do_historico(discord_user_id):
     aconteceram. Não abre prova: a regra das 5 chances só vale daqui pra
     frente."""
     usuario = {"artistas": {}, "sugestoes_desde_prova": 0}
-    for entrada in historico_mod._mais_recentes_por_track(historico_mod._do_usuario(historico_mod.carregar_historico(), discord_user_id)):
+    for entrada in historico_mod._indice(discord_user_id)["mais_recentes"]:
         voto = entrada.get("user_feedback")
         if voto not in ("positivo", "negativo"):
             continue
@@ -168,16 +164,29 @@ def esta_rejeitado(discord_user_id, nome, artistas=None):
     return bool(registro and registro["estado"] == ESTADO_REJEITADO)
 
 
-def _abrir_prova(registro, provedor, discord_user_id, titulo_descurtido):
+def _buscar_faixas_para_prova(provedor, nome):
+    try:
+        return provedor.obter_faixas_do_artista(nome, limite=FAIXAS_BUSCADAS_NA_PROVA)
+    except ProvedorIndisponivel:
+        return None
+    except Exception:
+        return None
+
+
+def _pode_abrir_prova(registro, discord_user_id, artista):
+    return (
+        registro["estado"] == ESTADO_NORMAL and registro["curtidas"] == 0
+        and not _eh_favorito(discord_user_id, artista) and not versoes_mod.eh_derivada(artista)
+    )
+
+
+def _abrir_prova(registro, faixas, discord_user_id, titulo_descurtido):
     """Separa as `FAIXAS_NA_PROVA` mais populares (ignorando a que acabou de
     levar 👎 e as já curtidas). As que já tinham 👎 contam como chance gasta.
-    Sem provedor disponível, a prova não abre agora - tenta de novo no
+    `faixas` vem de `_buscar_faixas_para_prova`, chamada fora da trava; sem
+    provedor disponível (`None`), a prova não abre agora - tenta de novo no
     próximo 👎."""
-    try:
-        faixas = provedor.obter_faixas_do_artista(registro["nome"], limite=FAIXAS_BUSCADAS_NA_PROVA)
-    except ProvedorIndisponivel:
-        return
-    except Exception:
+    if not faixas:
         return
     id_descurtido = historico_mod.track_id(titulo_descurtido, registro["nome"])
     selecionadas = []
@@ -232,6 +241,14 @@ def _encerrar_por_neutras(registro):
 def registrar_voto(discord_user_id, titulo, artista, feedback, provedor=None, abrir_prova=True):
     """Atualiza a nota/estado do artista com um 👍/👎. `abrir_prova=False`
     (importação de votos antigos) só mexe na nota. Devolve o registro."""
+    # A busca das faixas da prova é rede: fica fora da trava (2026-11-09),
+    # pra um voto não segurar os outros pedidos enquanto o Last.fm responde.
+    faixas_prova = None
+    if feedback == "negativo" and abrir_prova and provedor is not None:
+        registro_atual = carregar(discord_user_id).get(_chave(artista)) or _registro_vazio(artista)
+        if _pode_abrir_prova(registro_atual, discord_user_id, artista):
+            faixas_prova = _buscar_faixas_para_prova(provedor, registro_atual["nome"])
+
     with _lock:
         todos = _carregar_todos()
         usuario = _usuario(todos, discord_user_id)
@@ -252,12 +269,8 @@ def registrar_voto(discord_user_id, titulo, artista, feedback, provedor=None, ab
                 if len(registro["prova"]) < antes:
                     registro["reprovadas_na_prova"] += 1
                 _encerrar_prova_se_acabou(registro)
-            elif (
-                registro["estado"] == ESTADO_NORMAL and abrir_prova and provedor is not None
-                and registro["curtidas"] == 0 and not _eh_favorito(discord_user_id, artista)
-                and not versoes_mod.eh_derivada(artista)
-            ):
-                _abrir_prova(registro, provedor, discord_user_id, titulo)
+            elif abrir_prova and provedor is not None and _pode_abrir_prova(registro, discord_user_id, artista):
+                _abrir_prova(registro, faixas_prova, discord_user_id, titulo)
 
         registro["atualizado_em"] = date.today().isoformat()
         _salvar_todos(todos)
@@ -294,12 +307,18 @@ def proxima_faixa_de_prova(discord_user_id, excluidos=None):
     excluidos = {e.lower() for e in (excluidos or [])}
     with _lock:
         todos = _carregar_todos()
+        novo = str(discord_user_id) not in todos
         usuario = _usuario(todos, discord_user_id)
-        usuario["sugestoes_desde_prova"] += 1
+        chave_contagem = (ARQUIVO_ARTISTAS, str(discord_user_id))
+        contagem = _sugestoes_desde_prova.get(chave_contagem, usuario["sugestoes_desde_prova"]) + 1
+        _sugestoes_desde_prova[chave_contagem] = contagem
+        mudou = novo
         escolhida = None
-        if usuario["sugestoes_desde_prova"] >= INTERVALO_PROVA:
+        if contagem >= INTERVALO_PROVA:
             for registro in usuario["artistas"].values():
+                estado_antes = registro["estado"]
                 _encerrar_por_neutras(registro)
+                mudou = mudou or registro["estado"] != estado_antes
             pendentes = [
                 (faixa, registro)
                 for registro in usuario["artistas"].values()
@@ -315,8 +334,11 @@ def proxima_faixa_de_prova(discord_user_id, excluidos=None):
                     "titulo": faixa["titulo"], "artista": faixa["artista"], "generos": [],
                     "_score": 0.0, "_categoria": "prova", "origem": "prova",
                 }
-                usuario["sugestoes_desde_prova"] = 0
-        _salvar_todos(todos)
+                _sugestoes_desde_prova[chave_contagem] = 0
+                mudou = True
+        if mudou:
+            usuario["sugestoes_desde_prova"] = _sugestoes_desde_prova[chave_contagem]
+            _salvar_todos(todos)
     if escolhida:
         historico_mod.registrar_recomendacao(discord_user_id, escolhida["titulo"], escolhida["artista"], reason="prova", category="prova")
     return escolhida
