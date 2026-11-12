@@ -4,6 +4,12 @@ Este arquivo registra as mudanças importantes do projeto. O formato segue o [Ke
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-12
+
+### Alterado
+
+- **`docs/TODO.md`** - saiu "SIREN não envia o tempo de escuta": o SIREN 0.5.0 (Project-SIREN PR #48) passou a chamar `POST /radar/feedback_passivo` ao trocar de faixa, com a fração ouvida, se foi pulada e o segundo do pulo. Nenhuma mudança de código no ECHO; a rota já existia.
+
 ## [0.4.0] - 2026-11-10
 
 ### Adicionado
