@@ -4,6 +4,12 @@ Este arquivo registra as mudanças importantes do projeto. O formato segue o [Ke
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-13
+
+### Corrigido
+
+- **`assets/icone_echo.png`** volta ao emblema original completo (era um recorte só do rosto, 512 px). O recorte fica guardado como `assets/icone_echo_recortado_old.png`.
+
 ## [0.4.1] - 2026-11-12
 
 ### Alterado
